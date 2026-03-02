@@ -1053,7 +1053,38 @@ public class ApplicationsController {
             }
         });
 
-        cvBox.getChildren().addAll(cvPathField, btnBrowseCV);
+        // "Use Profile CV" button
+        Button btnUseProfileCv = new Button("📄 CV du profil");
+        btnUseProfileCv.setStyle("-fx-padding: 6 12; -fx-background-color: #28a745; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 6; -fx-font-size: 12px;");
+        btnUseProfileCv.setOnAction(e -> {
+            try {
+                Long candId = UserContext.getCandidateId();
+                if (candId == null) return;
+                Services.user.ProfileService profileSvc = new Services.user.ProfileService();
+                Services.user.ProfileService.CandidateInfo cInfo = profileSvc.getCandidateInfo(candId);
+                String profileCvPath = cInfo.cvPath();
+                if (profileCvPath == null || profileCvPath.isBlank()) {
+                    new Alert(Alert.AlertType.INFORMATION,
+                            "Aucun CV n'est enregistré dans votre profil.\nVeuillez d'abord télécharger un CV dans votre profil ou utiliser le bouton Parcourir.")
+                            .showAndWait();
+                    return;
+                }
+                java.io.File profileCvFile = new java.io.File(profileCvPath);
+                if (!profileCvFile.exists()) {
+                    new Alert(Alert.AlertType.WARNING,
+                            "Le fichier CV de votre profil est introuvable :\n" + profileCvPath)
+                            .showAndWait();
+                    return;
+                }
+                cvPathField.setText(profileCvFile.getAbsolutePath());
+            } catch (Exception ex) {
+                new Alert(Alert.AlertType.ERROR,
+                        "Impossible de charger le CV du profil : " + ex.getMessage())
+                        .showAndWait();
+            }
+        });
+
+        cvBox.getChildren().addAll(cvPathField, btnBrowseCV, btnUseProfileCv);
 
         Button btnGenerateLetter = new Button("🤖 Générer avec l'IA");
         btnGenerateLetter.setStyle("-fx-padding: 6 12; -fx-background-color: #6f42c1; -fx-text-fill: white; -fx-cursor: hand; -fx-font-weight: bold; -fx-background-radius: 6;");

@@ -554,7 +554,7 @@ public class MainShellController {
             else                  btnJobOffers.setText("🏢   Offres d'emploi");
         }
         if (btnStatistics != null)
-            btnStatistics.setText(isAdmin ? "📊   Statistiques Globales" : "📊   Mes Statistiques");
+            btnStatistics.setText(isAdmin ? "📊   Statistiques des Offres" : "📊   Mes Statistiques");
     }
 
     private void show(Button btn, boolean visible) {

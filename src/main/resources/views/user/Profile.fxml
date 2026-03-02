@@ -210,15 +210,36 @@
                                                   -fx-border-radius:10; -fx-border-color:#BBF7D0; -fx-border-width:1.5;
                                                   -fx-background-color:#FAFBFE;"/>
                             </VBox>
-                            <VBox spacing="6" HBox.hgrow="ALWAYS">
-                                <Label text="CV Path (optional)"
-                                       style="-fx-font-size:12px; -fx-font-weight:700; -fx-text-fill:#374151;"/>
-                                <TextField fx:id="tfCvPath" promptText="C:\...\cv.pdf"
+                        </HBox>
+
+                        <!-- CV Upload Section -->
+                        <VBox spacing="8">
+                            <Label text="CV / Resume (PDF)"
+                                   style="-fx-font-size:12px; -fx-font-weight:700; -fx-text-fill:#374151;"/>
+                            <HBox spacing="10" alignment="CENTER_LEFT">
+                                <TextField fx:id="tfCvPath" editable="false" promptText="No file selected"
+                                           HBox.hgrow="ALWAYS"
                                            style="-fx-font-size:13px; -fx-padding:10 12; -fx-background-radius:10;
                                                   -fx-border-radius:10; -fx-border-color:#BBF7D0; -fx-border-width:1.5;
-                                                  -fx-background-color:#FAFBFE;"/>
-                            </VBox>
-                        </HBox>
+                                                  -fx-background-color:#F1F5F9; -fx-text-fill:#475569;"/>
+                                <Button fx:id="btnBrowseCv" text="📂 Browse" onAction="#handleBrowseCv"
+                                        style="-fx-background-color:#5BA3F5; -fx-text-fill:white; -fx-font-weight:700;
+                                               -fx-font-size:12px; -fx-background-radius:10; -fx-padding:10 16;
+                                               -fx-cursor:hand;"/>
+                                <Button fx:id="btnViewCv" text="👁 View" onAction="#handleViewCv"
+                                        style="-fx-background-color:#F0FDF4; -fx-text-fill:#166534; -fx-font-weight:700;
+                                               -fx-font-size:12px; -fx-background-radius:10; -fx-padding:10 16;
+                                               -fx-border-color:#BBF7D0; -fx-border-width:1.5; -fx-border-radius:10;
+                                               -fx-cursor:hand;"/>
+                                <Button fx:id="btnRemoveCv" text="🗑 Remove" onAction="#handleRemoveCv"
+                                        style="-fx-background-color:#FFF1F2; -fx-text-fill:#9F1239; -fx-font-weight:700;
+                                               -fx-font-size:12px; -fx-background-radius:10; -fx-padding:10 16;
+                                               -fx-border-color:#FECDD3; -fx-border-width:1.5; -fx-border-radius:10;
+                                               -fx-cursor:hand;"/>
+                            </HBox>
+                            <Label fx:id="lblCvStatus" text=""
+                                   style="-fx-font-size:11px; -fx-text-fill:#64748B;"/>
+                        </VBox>
                     </VBox>
                 </VBox>
 

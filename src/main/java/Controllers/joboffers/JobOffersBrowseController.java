@@ -822,7 +822,7 @@ public class JobOffersBrowseController {
         pdfPathField.setEditable(false);
         pdfPathField.setPrefWidth(280);
 
-        Button btnBrowse = new Button("Parcourir");
+        Button btnBrowse = new Button("📂 Parcourir");
         btnBrowse.setStyle("-fx-padding: 6 12; -fx-background-color: #5BA3F5; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 6;");
         btnBrowse.setOnAction(e -> {
             javafx.stage.FileChooser fileChooser = new javafx.stage.FileChooser();
@@ -836,7 +836,32 @@ public class JobOffersBrowseController {
             }
         });
 
-        pdfBox.getChildren().addAll(pdfPathField, btnBrowse);
+        // "Use Profile CV" button
+        Button btnUseProfileCv = new Button("📄 Utiliser le CV du profil");
+        btnUseProfileCv.setStyle("-fx-padding: 6 12; -fx-background-color: #28a745; -fx-text-fill: white; -fx-cursor: hand; -fx-background-radius: 6; -fx-font-size: 12px;");
+        btnUseProfileCv.setOnAction(e -> {
+            try {
+                Long candId = Utils.UserContext.getCandidateId();
+                if (candId == null) { showAlert("Erreur", "Candidat non trouvé.", Alert.AlertType.WARNING); return; }
+                Services.user.ProfileService profileSvc = new Services.user.ProfileService();
+                Services.user.ProfileService.CandidateInfo cInfo = profileSvc.getCandidateInfo(candId);
+                String profileCvPath = cInfo.cvPath();
+                if (profileCvPath == null || profileCvPath.isBlank()) {
+                    showAlert("Pas de CV", "Aucun CV n'est enregistré dans votre profil.\nVeuillez d'abord télécharger un CV dans votre profil ou utiliser le bouton Parcourir.", Alert.AlertType.INFORMATION);
+                    return;
+                }
+                java.io.File profileCvFile = new java.io.File(profileCvPath);
+                if (!profileCvFile.exists()) {
+                    showAlert("Fichier introuvable", "Le fichier CV de votre profil est introuvable :\n" + profileCvPath, Alert.AlertType.WARNING);
+                    return;
+                }
+                pdfPathField.setText(profileCvFile.getAbsolutePath());
+            } catch (Exception ex) {
+                showAlert("Erreur", "Impossible de charger le CV du profil : " + ex.getMessage(), Alert.AlertType.ERROR);
+            }
+        });
+
+        pdfBox.getChildren().addAll(pdfPathField, btnBrowse, btnUseProfileCv);
 
         // Phone validation on input change
         phoneField.textProperty().addListener((obs, oldVal, newVal) -> {

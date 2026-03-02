@@ -14,6 +14,10 @@ import Services.user.LuxandFaceService;
 import javafx.stage.FileChooser;
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.UUID;
 
 
 public class ProfileController {
@@ -37,11 +41,24 @@ public class ProfileController {
     @FXML private TextField tfCvPath;
     @FXML private Button btnEnableFace;
     @FXML private Button btnDisableFace;
+    @FXML private Button btnBrowseCv;
+    @FXML private Button btnViewCv;
+    @FXML private Button btnRemoveCv;
+    @FXML private Label lblCvStatus;
+
+    private static final String CV_UPLOAD_DIR = "uploads/cvs/";
+    private File selectedCvFile = null; // Holds the new file picked by the user (not yet saved)
 
     private final ProfileService service = new ProfileService();
 
     @FXML
     public void initialize() {
+        // Ensure CV upload directory exists
+        try {
+            Files.createDirectories(Paths.get(CV_UPLOAD_DIR));
+        } catch (Exception e) {
+            System.err.println("Could not create CV upload dir: " + e.getMessage());
+        }
         loadMyProfile();
     }
 
@@ -88,7 +105,18 @@ public class ProfileController {
                 tfCandidateLocation.setText(c.location());
                 tfEducationLevel.setText(c.educationLevel());
                 tfExperienceYears.setText(c.experienceYears() == null ? "" : String.valueOf(c.experienceYears()));
-                tfCvPath.setText(c.cvPath());
+
+                String cvPath = c.cvPath();
+                selectedCvFile = null;
+                if (cvPath != null && !cvPath.isBlank()) {
+                    tfCvPath.setText(extractFileName(cvPath));
+                    updateCvButtons(true);
+                    lblCvStatus.setText("✅ CV uploaded");
+                } else {
+                    tfCvPath.setText("");
+                    updateCvButtons(false);
+                    lblCvStatus.setText("No CV uploaded yet");
+                }
             }
 
             lblStatus.setText("Loaded ✅");
@@ -157,17 +185,57 @@ public class ProfileController {
                     catch (NumberFormatException ex) { showError("Experience years must be a number."); return; }
                 }
 
-                String cv = tfCvPath.getText().trim();
-                err = InputValidator.validateCvPath(cv);
-                if (err != null) { showError(err); return; }
+                // Handle CV file upload
+                String cvPath = null;
+                ProfileService.CandidateInfo existing = service.getCandidateInfo(userId);
+                String existingCvPath = existing.cvPath();
+
+                if (selectedCvFile != null) {
+                    // A new file was selected — copy it to uploads/cvs/
+                    try {
+                        String fileName = UUID.randomUUID() + "_" + selectedCvFile.getName();
+                        Path target = Paths.get(CV_UPLOAD_DIR, fileName);
+                        Files.copy(selectedCvFile.toPath(), target, StandardCopyOption.REPLACE_EXISTING);
+                        cvPath = target.toString();
+                        System.out.println("CV uploaded to: " + cvPath);
+
+                        // Delete old CV file if it existed
+                        if (existingCvPath != null && !existingCvPath.isBlank()) {
+                            try { Files.deleteIfExists(Paths.get(existingCvPath)); } catch (Exception ignored) {}
+                        }
+                    } catch (Exception ex) {
+                        showError("Failed to upload CV: " + ex.getMessage());
+                        return;
+                    }
+                } else if (tfCvPath.getText() != null && !tfCvPath.getText().isBlank()) {
+                    // Keep existing CV (no new file selected, but text field still shows file name)
+                    cvPath = existingCvPath;
+                }
+                // If both are null/empty, cvPath stays null => CV removed
+                // Delete old file from disk if CV was removed
+                if (cvPath == null && existingCvPath != null && !existingCvPath.isBlank()) {
+                    try { Files.deleteIfExists(Paths.get(existingCvPath)); } catch (Exception ignored) {}
+                }
 
                 service.updateCandidateInfo(
                         userId,
                         tfCandidateLocation.getText().trim(),
                         tfEducationLevel.getText().trim(),
                         years,
-                        cv
+                        cvPath
                 );
+
+                // Update UI after save
+                selectedCvFile = null;
+                if (cvPath != null && !cvPath.isBlank()) {
+                    tfCvPath.setText(extractFileName(cvPath));
+                    updateCvButtons(true);
+                    lblCvStatus.setText("✅ CV uploaded");
+                } else {
+                    tfCvPath.setText("");
+                    updateCvButtons(false);
+                    lblCvStatus.setText("No CV uploaded yet");
+                }
             }
 
             pfPassword.clear();
@@ -274,8 +342,97 @@ public class ProfileController {
         alert.showAndWait();
     }
 
+    // ═══════════════════ CV Upload Methods ═══════════════════
 
+    @FXML
+    private void handleBrowseCv() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle("Select your CV (PDF)");
+        fc.getExtensionFilters().addAll(
+                new FileChooser.ExtensionFilter("PDF Files", "*.pdf"),
+                new FileChooser.ExtensionFilter("Word Documents", "*.doc", "*.docx")
+        );
+        File file = fc.showOpenDialog(tfCvPath.getScene().getWindow());
+        if (file != null) {
+            selectedCvFile = file;
+            tfCvPath.setText(file.getName());
+            lblCvStatus.setText("📎 New file selected — click Save to upload");
+            updateCvButtons(true);
+        }
+    }
 
+    @FXML
+    private void handleViewCv() {
+        try {
+            Long userId = Session.getUserId();
+            if (userId == null) return;
+
+            // If a new file is selected but not yet saved, open the local file
+            if (selectedCvFile != null && selectedCvFile.exists()) {
+                java.awt.Desktop.getDesktop().open(selectedCvFile);
+                return;
+            }
+
+            // Otherwise open the already-uploaded CV
+            ProfileService.CandidateInfo c = service.getCandidateInfo(userId);
+            String cvPath = c.cvPath();
+            if (cvPath == null || cvPath.isBlank()) {
+                showAlert("No CV", "No CV has been uploaded yet.");
+                return;
+            }
+            File cvFile = new File(cvPath);
+            if (!cvFile.exists()) {
+                showError("CV file not found at: " + cvPath);
+                return;
+            }
+            java.awt.Desktop.getDesktop().open(cvFile);
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Could not open CV: " + e.getMessage());
+        }
+    }
+
+    @FXML
+    private void handleRemoveCv() {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                "Are you sure you want to remove your CV?", ButtonType.YES, ButtonType.NO);
+        confirm.setTitle("Remove CV");
+        confirm.setHeaderText(null);
+        confirm.showAndWait().ifPresent(btn -> {
+            if (btn == ButtonType.YES) {
+                selectedCvFile = null;
+                tfCvPath.setText("");
+                lblCvStatus.setText("CV will be removed when you save");
+                updateCvButtons(false);
+            }
+        });
+    }
+
+    private void updateCvButtons(boolean hasCv) {
+        if (btnViewCv != null) {
+            btnViewCv.setVisible(hasCv);
+            btnViewCv.setManaged(hasCv);
+        }
+        if (btnRemoveCv != null) {
+            btnRemoveCv.setVisible(hasCv);
+            btnRemoveCv.setManaged(hasCv);
+        }
+    }
+
+    private String extractFileName(String path) {
+        if (path == null || path.isBlank()) return "";
+        // Remove UUID prefix if present (format: uuid_originalname.pdf)
+        String name = Paths.get(path).getFileName().toString();
+        int underscoreIdx = name.indexOf('_');
+        if (underscoreIdx > 0 && underscoreIdx < 40) {
+            // Check if the part before _ looks like a UUID
+            String prefix = name.substring(0, underscoreIdx);
+            if (prefix.length() >= 32) {
+                return name.substring(underscoreIdx + 1);
+            }
+        }
+        return name;
+    }
 
 
 }

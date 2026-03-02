@@ -104,7 +104,7 @@
                     <VBox.margin><Insets top="6" bottom="6"/></VBox.margin>
                 </Separator>
                 <Button fx:id="btnAdminStats"        onAction="#handleAdminStatsNav"
-                        text="📊   Statistiques Globales"
+                        text="📊   Statistiques des Candidatures"
                         styleClass="sidebar-nav-btn" maxWidth="Infinity"
                         visible="false" managed="false"/>
                 <Button fx:id="btnAdminApplications" onAction="#handleAdminApplicationsNav"
