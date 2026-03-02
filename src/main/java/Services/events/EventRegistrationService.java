@@ -98,6 +98,21 @@ public class EventRegistrationService {
         return 0;
     }
 
+    /**
+     * Count all active (non-cancelled, non-rejected) registrations for an event.
+     * Includes: PENDING, REGISTERED, CONFIRMED, ATTENDED
+     */
+    public int getActiveRegistrationCount(long eventId) throws SQLException {
+        String query = "SELECT COUNT(*) FROM event_registration WHERE event_id = ? AND attendance_status NOT IN ('CANCELLED', 'REJECTED', 'ABSENT')";
+        PreparedStatement ps = conn().prepareStatement(query);
+        ps.setLong(1, eventId);
+        ResultSet rs = ps.executeQuery();
+        if (rs.next()) {
+            return rs.getInt(1);
+        }
+        return 0;
+    }
+
     public List<EventRegistration> getAll() throws SQLException {
         List<EventRegistration> registrations = new ArrayList<>();
         String query = "SELECT er.*, re.title, re.event_date FROM event_registration er JOIN recruitment_event re ON er.event_id = re.id";

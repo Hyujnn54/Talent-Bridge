@@ -102,16 +102,39 @@ public class RecruitmentEventService {
         return events;
     }
 
+    /**
+     * An event is considered popular if:
+     *  - It has >= 50% fill rate, OR
+     *  - It has the highest number of active registrations among all events (with at least 1)
+     */
     public boolean isEventPopular(long eventId) throws SQLException {
+        EventRegistrationService regService = new EventRegistrationService();
+        int activeCount = regService.getActiveRegistrationCount(eventId);
+
+        if (activeCount <= 0) return false;
+
+        // Check fill rate
         String query = "SELECT capacity FROM recruitment_event WHERE id = ?";
         PreparedStatement ps = conn().prepareStatement(query);
         ps.setLong(1, eventId);
         ResultSet rs = ps.executeQuery();
         if (rs.next()) {
             int capacity = rs.getInt("capacity");
-            if (capacity <= 0) return false;
-            int confirmedCount = new EventRegistrationService().getConfirmedCount(eventId);
-            return ((double) confirmedCount / capacity) * 100 >= 70;
+            if (capacity > 0) {
+                double fillRate = ((double) activeCount / capacity) * 100;
+                if (fillRate >= 50) return true;
+            }
+        }
+
+        // Mark the event with the most active registrations as popular
+        String maxQuery = "SELECT event_id, COUNT(*) as cnt FROM event_registration " +
+                "WHERE attendance_status NOT IN ('CANCELLED','REJECTED','ABSENT') " +
+                "GROUP BY event_id ORDER BY cnt DESC LIMIT 1";
+        Statement st = conn().createStatement();
+        ResultSet maxRs = st.executeQuery(maxQuery);
+        if (maxRs.next()) {
+            long topEventId = maxRs.getLong("event_id");
+            return topEventId == eventId;
         }
         return false;
     }

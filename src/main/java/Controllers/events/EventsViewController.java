@@ -170,9 +170,20 @@ public class EventsViewController implements Initializable {
     }
 
     private VBox buildEventCard(RecruitmentEvent ev, boolean isRecommended) {
+        // Check popularity
+        boolean isPopular = false;
+        try {
+            isPopular = eventService.isEventPopular(ev.getId());
+        } catch (SQLException ex) {
+            System.err.println("Error checking popularity: " + ex.getMessage());
+        }
+
+        String borderColor = isPopular ? "#F97316" : "#E4EBF5";
+        String borderWidth = isPopular ? "2" : "1";
+
         VBox card = new VBox(10);
         card.setStyle("-fx-background-color: white; -fx-background-radius: 14;" +
-                      "-fx-border-color: #E4EBF5; -fx-border-width: 1; -fx-border-radius: 14;" +
+                      "-fx-border-color: " + borderColor + "; -fx-border-width: " + borderWidth + "; -fx-border-radius: 14;" +
                       "-fx-padding: 18 20; -fx-cursor: hand;" +
                       "-fx-effect: dropshadow(gaussian, rgba(100,150,220,0.06), 8,0,0,2);");
 
@@ -189,6 +200,14 @@ public class EventsViewController implements Initializable {
 
         HBox rightBadges = new HBox(6);
         rightBadges.setAlignment(Pos.CENTER_RIGHT);
+
+        if (isPopular) {
+            Label popularBadge = new Label("\uD83D\uDD25 Populaire");
+            popularBadge.setStyle("-fx-background-color: #FFF3CD; -fx-text-fill: #F97316;" +
+                                  "-fx-font-size: 10px; -fx-font-weight: bold;" +
+                                  "-fx-padding: 3 8; -fx-background-radius: 6;");
+            rightBadges.getChildren().add(popularBadge);
+        }
 
         if (isRecommended) {
             Label recBadge = new Label("⭐ Recommandé");
@@ -224,13 +243,15 @@ public class EventsViewController implements Initializable {
         card.getChildren().addAll(topRow, titleLbl, descLbl, infoRow);
 
         // Hover effect
+        final boolean popular = isPopular;
+        String originalBorderColor = popular ? "#F97316" : "#E4EBF5";
         card.setOnMouseEntered(e -> card.setStyle(card.getStyle().replace(
                 "-fx-background-color: white;", "-fx-background-color: #F7FAFF;")));
         card.setOnMouseExited(e -> {
             if (selectedEvent == null || selectedEvent.getId() != ev.getId()) {
                 card.setStyle(card.getStyle().replace(
                         "-fx-background-color: #F7FAFF;", "-fx-background-color: white;")
-                        .replace("-fx-border-color: #1565C0;", "-fx-border-color: #E4EBF5;"));
+                        .replace("-fx-border-color: #1565C0;", "-fx-border-color: " + originalBorderColor + ";"));
             }
         });
 

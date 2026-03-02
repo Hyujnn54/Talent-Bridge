@@ -338,34 +338,45 @@ public class RecruiterDashboardController implements Initializable {
     }
 
     private void checkForUrgentRegistrations() {
-        if (attendeesTable == null || attendeesTable.getItems() == null) return;
+        if (currentRecruiter == null) return;
 
-        long imminentCount = attendeesTable.getItems().stream()
-                .filter(r -> r.getAttendanceStatus() == AttendanceStatusEnum.PENDING
-                          && r.getEvent() != null
-                          && r.getEvent().getEventDate() != null)
-                .filter(r -> {
-                    long h = java.time.temporal.ChronoUnit.HOURS
-                            .between(LocalDateTime.now(), r.getEvent().getEventDate());
-                    return h >= 0 && h <= 48;
-                })
-                .count();
+        try {
+            // Load all registrations for all the recruiter's events directly from DB
+            java.util.List<RecruitmentEvent> events = eventService.getByRecruiter(currentRecruiter.getId());
+            java.util.List<EventRegistration> allRegs = new java.util.ArrayList<>();
+            for (RecruitmentEvent ev : events) {
+                allRegs.addAll(registrationService.getByEvent(ev.getId()));
+            }
 
-        long overdueCount = attendeesTable.getItems().stream()
-                .filter(r -> r.getAttendanceStatus() == AttendanceStatusEnum.PENDING
-                          && r.getEvent() != null
-                          && r.getEvent().getEventDate() != null
-                          && r.getEvent().getEventDate().isBefore(LocalDateTime.now()))
-                .count();
+            long imminentCount = allRegs.stream()
+                    .filter(r -> r.getAttendanceStatus() == AttendanceStatusEnum.PENDING
+                              && r.getEvent() != null
+                              && r.getEvent().getEventDate() != null)
+                    .filter(r -> {
+                        long h = java.time.temporal.ChronoUnit.HOURS
+                                .between(LocalDateTime.now(), r.getEvent().getEventDate());
+                        return h >= 0 && h <= 48;
+                    })
+                    .count();
 
-        if (overdueCount > 0) {
-            Services.joboffers.NotificationService.showWarning(
-                "\u26a0\ufe0f Inscriptions en retard",
-                overdueCount + " candidat(s) en attente pour des \u00e9v\u00e9nements d\u00e9j\u00e0 pass\u00e9s !");
-        } else if (imminentCount > 0) {
-            Services.joboffers.NotificationService.showWarning(
-                "\u26a0\ufe0f \u00c9v\u00e9nements imminents",
-                imminentCount + " inscription(s) PENDING pour des \u00e9v\u00e9nements dans moins de 48h !");
+            long overdueCount = allRegs.stream()
+                    .filter(r -> r.getAttendanceStatus() == AttendanceStatusEnum.PENDING
+                              && r.getEvent() != null
+                              && r.getEvent().getEventDate() != null
+                              && r.getEvent().getEventDate().isBefore(LocalDateTime.now()))
+                    .count();
+
+            if (overdueCount > 0) {
+                Services.joboffers.NotificationService.showWarning(
+                    "\u26a0\ufe0f Inscriptions en retard",
+                    overdueCount + " candidat(s) en attente pour des \u00e9v\u00e9nements d\u00e9j\u00e0 pass\u00e9s !");
+            } else if (imminentCount > 0) {
+                Services.joboffers.NotificationService.showWarning(
+                    "\u26a0\ufe0f \u00c9v\u00e9nements imminents",
+                    imminentCount + " inscription(s) PENDING pour des \u00e9v\u00e9nements dans moins de 48h !");
+            }
+        } catch (Exception e) {
+            System.err.println("[RecruiterDashboard] checkForUrgentRegistrations error: " + e.getMessage());
         }
     }
 
@@ -403,6 +414,7 @@ public class RecruiterDashboardController implements Initializable {
 
             if (currentRecruiter != null) {
                 refreshTable();
+                checkForUrgentRegistrations();
                 // Update top-bar labels if present
                 Models.user.User sessionUser = Utils.Session.getCurrentUser();
                 if (sessionUser != null) {
