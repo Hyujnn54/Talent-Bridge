@@ -17,9 +17,15 @@ import java.util.regex.Pattern;
 
 public class OllamaRankingService {
 
-    private static final String OLLAMA_URL = "http://localhost:11434/api/chat";
-    private static final String MODEL = "llama3";
-    private static final String API_KEY = "81eddfe408e945daa69c82ff3bbc2417.nNY2akMe9gLwFV7275Tf7hja";
+    // Use the same Groq cloud API that works for cover letter generation
+    private static final String GROQ_API_KEY = "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";
+    private static final String GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions";
+
+    private static final String[] MODELS = {
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768"
+    };
 
     public record RankResult(int score, String rationale) {}
 
@@ -34,21 +40,26 @@ public class OllamaRankingService {
         String coverLetter,
         String cvContent
     ) {
-        try {
-            String prompt = buildPrompt(jobTitle, jobDescription, offerSkills, candidateName,
-                candidateExperience, candidateEducation, candidateSkills, coverLetter, cvContent);
+        String prompt = buildPrompt(jobTitle, jobDescription, offerSkills, candidateName,
+            candidateExperience, candidateEducation, candidateSkills, coverLetter, cvContent);
 
-            String response = callOllama(prompt);
-            if (response != null && !response.isEmpty()) {
-                RankResult parsed = parseResponse(response);
-                if (parsed != null) {
-                    return parsed;
+        for (String model : MODELS) {
+            try {
+                System.out.println("[Ranking] Trying Groq model: " + model);
+                String response = callGroq(model, prompt);
+                if (response != null && !response.isEmpty()) {
+                    RankResult parsed = parseResponse(response);
+                    if (parsed != null) {
+                        System.out.println("[Ranking] Success with model: " + model + " | Score: " + parsed.score());
+                        return parsed;
+                    }
                 }
+            } catch (Exception e) {
+                System.err.println("[Ranking] Groq model " + model + " failed: " + e.getMessage());
             }
-        } catch (Exception e) {
-            System.err.println("Ollama ranking failed: " + e.getMessage());
         }
 
+        System.out.println("[Ranking] All Groq models failed — using heuristic fallback.");
         return heuristicRank(jobDescription, offerSkills, candidateSkills, coverLetter);
     }
 
@@ -95,95 +106,106 @@ public class OllamaRankingService {
         return prompt.toString();
     }
 
-    private static String callOllama(String prompt) throws Exception {
-        URL url = new URL(OLLAMA_URL);
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+    private static String callGroq(String model, String prompt) throws Exception {
+        URL url = new URL(GROQ_URL);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Authorization", "Bearer " + GROQ_API_KEY);
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(60000);
 
-        connection.setRequestMethod("POST");
-        connection.setRequestProperty("Content-Type", "application/json");
-        connection.setRequestProperty("Authorization", "Bearer " + API_KEY);
-        connection.setDoOutput(true);
+        JSONObject systemMsg = new JSONObject();
+        systemMsg.put("role", "system");
+        systemMsg.put("content", "You score candidates for job fit. Return JSON only.");
 
-        JSONObject requestBody = new JSONObject();
-        requestBody.put("model", MODEL);
-        requestBody.put("stream", false);
-        requestBody.put("temperature", 0.2);
+        JSONObject userMsg = new JSONObject();
+        userMsg.put("role", "user");
+        userMsg.put("content", prompt);
 
         JSONArray messages = new JSONArray();
-        JSONObject systemMessage = new JSONObject();
-        systemMessage.put("role", "system");
-        systemMessage.put("content", "You score candidates for job fit.");
-        messages.put(systemMessage);
+        messages.put(systemMsg);
+        messages.put(userMsg);
 
-        JSONObject userMessage = new JSONObject();
-        userMessage.put("role", "user");
-        userMessage.put("content", prompt);
-        messages.put(userMessage);
+        JSONObject body = new JSONObject();
+        body.put("model", model);
+        body.put("messages", messages);
+        body.put("temperature", 0.2);
+        body.put("max_tokens", 256);
+        body.put("stream", false);
 
-        requestBody.put("messages", messages);
-
-        try (OutputStream os = connection.getOutputStream()) {
-            byte[] input = requestBody.toString().getBytes(StandardCharsets.UTF_8);
-            os.write(input, 0, input.length);
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
         }
 
-        int responseCode = connection.getResponseCode();
+        int responseCode = conn.getResponseCode();
         if (responseCode != 200) {
             StringBuilder errorBody = new StringBuilder();
-            try (BufferedReader errorReader = new BufferedReader(new InputStreamReader(connection.getErrorStream()))) {
+            try (BufferedReader errorReader = new BufferedReader(
+                    new InputStreamReader(conn.getErrorStream(), StandardCharsets.UTF_8))) {
                 String line;
-                while ((line = errorReader.readLine()) != null) {
-                    errorBody.append(line);
-                }
+                while ((line = errorReader.readLine()) != null) errorBody.append(line);
             }
-            System.err.println("Ollama API error: " + responseCode + " - " + errorBody);
+            System.err.println("[Ranking] Groq HTTP " + responseCode + " for model " + model + ": " + errorBody);
             return null;
         }
 
         StringBuilder response = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
             String line;
-            while ((line = reader.readLine()) != null) {
-                response.append(line);
-            }
+            while ((line = reader.readLine()) != null) response.append(line);
         }
 
-        return response.toString();
+        // Parse OpenAI-compatible response: choices[0].message.content
+        JSONObject json = new JSONObject(response.toString());
+        JSONArray choices = json.optJSONArray("choices");
+        if (choices != null && choices.length() > 0) {
+            JSONObject message = choices.getJSONObject(0).optJSONObject("message");
+            if (message != null) {
+                return message.optString("content", "");
+            }
+        }
+        return null;
     }
 
-    private static RankResult parseResponse(String apiResponse) {
+    private static RankResult parseResponse(String content) {
         try {
-            JSONObject jsonResponse = new JSONObject(apiResponse);
-            String content = "";
+            if (content == null || content.isBlank()) return null;
 
-            if (jsonResponse.has("message")) {
-                JSONObject message = jsonResponse.getJSONObject("message");
-                content = message.optString("content", "");
-            } else if (jsonResponse.has("response")) {
-                content = jsonResponse.optString("response", "");
-            }
+            content = content.trim();
 
-            content = content == null ? "" : content.trim();
-            if (content.isEmpty()) {
-                return null;
-            }
+            // Strip markdown code fences if present
+            content = content.replaceAll("```json\\s*", "").replaceAll("```\\s*", "").trim();
 
-            // Try direct JSON parse from model output
+            // Try direct JSON parse
             try {
                 JSONObject parsed = new JSONObject(content);
                 int score = clampScore(parsed.optInt("score", 0));
                 String rationale = parsed.optString("rationale", "No rationale provided.");
                 return new RankResult(score, trimRationale(rationale));
-            } catch (Exception ignored) {
-                // fall through to regex parsing
+            } catch (Exception ignored) {}
+
+            // Try to extract JSON object from mixed text
+            Pattern jsonPattern = Pattern.compile("\\{[^}]*\"score\"[^}]*}");
+            Matcher jsonMatcher = jsonPattern.matcher(content);
+            if (jsonMatcher.find()) {
+                try {
+                    JSONObject parsed = new JSONObject(jsonMatcher.group());
+                    int score = clampScore(parsed.optInt("score", 0));
+                    String rationale = parsed.optString("rationale", "No rationale provided.");
+                    return new RankResult(score, trimRationale(rationale));
+                } catch (Exception ignored) {}
             }
 
+            // Regex fallback
             int score = clampScore(extractScore(content));
             String rationale = extractRationale(content);
             return new RankResult(score, trimRationale(rationale));
 
         } catch (Exception e) {
-            System.err.println("Failed to parse Ollama response: " + e.getMessage());
+            System.err.println("[Ranking] Failed to parse response: " + e.getMessage());
             return null;
         }
     }
@@ -194,8 +216,7 @@ public class OllamaRankingService {
         if (m.find()) {
             try {
                 return Integer.parseInt(m.group(1));
-            } catch (NumberFormatException ignored) {
-            }
+            } catch (NumberFormatException ignored) {}
         }
         return 0;
     }
