@@ -224,28 +224,14 @@ public class GrokAIService {
         return content.isEmpty() ? null : content;
     }
 
+    // ── Lecto AI Translation (primary) + Groq fallback ─────────────────
+    private static final String LECTO_API_KEY = "BQ9TKYZ-6KS4SDN-NB7AW6A-553W0JD";
+    private static final String LECTO_API_URL = "https://api.lecto.ai/v1/translate/text";
+
     public static String translateCoverLetter(String coverLetter, String targetLanguage) {
         if (coverLetter == null || coverLetter.trim().isEmpty()) return coverLetter;
 
-        String prompt = "Translate the following cover letter to " + targetLanguage + ".\n"
-                + "Output ONLY the translated cover letter text, with no preamble or explanation.\n\n"
-                + coverLetter;
-
-        for (String model : MODELS) {
-            try {
-                String result = callGroq(model, prompt);
-                if (result != null && !result.isBlank()) {
-                    System.out.println("Translation via Groq successful (" + model + ")");
-                    return cleanContent(result);
-                }
-            } catch (Exception e) {
-                System.err.println("Groq translation model " + model + " failed: " + e.getMessage());
-            }
-        }
-
-        // Fallback: MyMemory free translation API
-        System.out.println("Groq unavailable — falling back to MyMemory translation API");
-        String langCode = switch (targetLanguage.toLowerCase()) {
+        String targetLangCode = switch (targetLanguage.toLowerCase()) {
             case "french"  -> "fr";
             case "arabic"  -> "ar";
             case "english" -> "en";
@@ -253,64 +239,240 @@ public class GrokAIService {
             case "german"  -> "de";
             default        -> targetLanguage.toLowerCase().substring(0, Math.min(2, targetLanguage.length()));
         };
-        return translateWithMyMemory(coverLetter, langCode);
-    }
 
-    private static String translateWithMyMemory(String text, String targetLangCode) {
-        try {
-            if (text.length() <= 500) {
-                return callMyMemory(text, targetLangCode);
-            }
+        // Detect source language from the cover letter text
+        String sourceLangCode = detectLanguage(coverLetter);
+        System.out.println("Detected source language: " + sourceLangCode + " → target: " + targetLangCode);
 
-            StringBuilder result = new StringBuilder();
-            String[] sentences = text.split("(?<=[.!?])\\s+");
-            StringBuilder chunk = new StringBuilder();
-
-            for (String sentence : sentences) {
-                if (chunk.length() + sentence.length() > 480 && chunk.length() > 0) {
-                    String translated = callMyMemory(chunk.toString().trim(), targetLangCode);
-                    result.append(translated).append(" ");
-                    chunk = new StringBuilder();
-                }
-                chunk.append(sentence).append(" ");
-            }
-            if (chunk.length() > 0) {
-                result.append(callMyMemory(chunk.toString().trim(), targetLangCode));
-            }
-            return result.toString().trim();
-        } catch (Exception e) {
-            System.err.println("MyMemory translation failed: " + e.getMessage());
-            return text;
+        // Don't translate if source and target are the same
+        if (sourceLangCode.equals(targetLangCode)) {
+            System.out.println("Source and target language are the same (" + sourceLangCode + "), skipping translation.");
+            return coverLetter;
         }
+
+        // 1) Try Lecto API first
+        try {
+            String result = callLectoAPI(coverLetter, sourceLangCode, targetLangCode);
+            if (result != null && !result.isBlank()) {
+                System.out.println("Translation via Lecto API successful (target: " + targetLangCode + ")");
+                return result;
+            }
+        } catch (Exception e) {
+            System.err.println("Lecto API translation failed: " + e.getMessage());
+        }
+
+        // 2) Fallback to Groq
+        System.out.println("Lecto failed — falling back to Groq for translation");
+        try {
+            String result = translateWithGroq(coverLetter, targetLanguage);
+            if (result != null && !result.isBlank()) {
+                System.out.println("Translation via Groq fallback successful");
+                return result;
+            }
+        } catch (Exception e) {
+            System.err.println("Groq translation fallback also failed: " + e.getMessage());
+        }
+
+        System.err.println("All translation methods failed — returning original text.");
+        return coverLetter;
     }
 
-    private static String callMyMemory(String text, String targetLangCode) throws Exception {
-        String encoded = java.net.URLEncoder.encode(text, java.nio.charset.StandardCharsets.UTF_8);
-        String urlStr = "https://api.mymemory.translated.net/get?q=" + encoded
-                + "&langpair=en|" + targetLangCode;
+    /**
+     * Detects the language of the given text using Groq AI.
+     * Falls back to local keyword-based detection if Groq fails.
+     */
+    private static String detectLanguage(String text) {
+        if (text == null || text.isBlank()) return "en";
 
-        java.net.URL url = new java.net.URL(urlStr);
-        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("GET");
-        conn.setConnectTimeout(10000);
-        conn.setReadTimeout(15000);
+        // 1) Try Groq AI detection
+        try {
+            String detected = detectLanguageWithGroq(text);
+            if (detected != null && !detected.isBlank()) {
+                System.out.println("Groq detected language: " + detected);
+                return detected;
+            }
+        } catch (Exception e) {
+            System.err.println("Groq language detection failed: " + e.getMessage());
+        }
+
+        // 2) Fallback to local keyword-based detection
+        System.out.println("Falling back to local language detection");
+        return detectLanguageLocal(text);
+    }
+
+    /**
+     * Uses Groq AI to detect the language of the text.
+     * Returns a 2-letter ISO language code (en, fr, ar, es, de, etc.)
+     */
+    private static String detectLanguageWithGroq(String text) {
+        String sample = text.substring(0, Math.min(text.length(), 500));
+
+        String prompt = "Detect the language of the following text. "
+                + "Reply with ONLY the 2-letter ISO 639-1 language code (e.g. en, fr, ar, es, de). "
+                + "Nothing else, just the 2-letter code.\n\n"
+                + sample;
+
+        for (String model : MODELS) {
+            try {
+                String result = callGroq(model, prompt);
+                if (result != null && !result.isBlank()) {
+                    // Clean the response: extract just the 2-letter code
+                    String code = result.trim().toLowerCase().replaceAll("[^a-z]", "");
+                    if (code.length() >= 2) {
+                        code = code.substring(0, 2);
+                        // Validate it's a known language code
+                        if (isValidLangCode(code)) {
+                            return code;
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("Groq detect language model " + model + " failed: " + e.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private static boolean isValidLangCode(String code) {
+        return code.equals("en") || code.equals("fr") || code.equals("ar")
+                || code.equals("es") || code.equals("de") || code.equals("it")
+                || code.equals("pt") || code.equals("nl") || code.equals("ru")
+                || code.equals("zh") || code.equals("ja") || code.equals("ko")
+                || code.equals("tr") || code.equals("pl") || code.equals("sv");
+    }
+
+    /**
+     * Local keyword-based language detection fallback.
+     */
+    private static String detectLanguageLocal(String text) {
+        String sample = text.substring(0, Math.min(text.length(), 500));
+
+        // Arabic: check for Arabic Unicode characters
+        int arabicChars = 0;
+        for (char c : sample.toCharArray()) {
+            if (Character.UnicodeBlock.of(c) == Character.UnicodeBlock.ARABIC) {
+                arabicChars++;
+            }
+        }
+        if (arabicChars > sample.length() * 0.15) return "ar";
+
+        String lower = sample.toLowerCase();
+
+        // French indicators
+        String[] frenchWords = {"je", "nous", "vous", "les", "des", "une", "est", "pour", "dans", "avec",
+                "mon", "mes", "cette", "cher", "chère", "madame", "monsieur", "candidature", "poste",
+                "entreprise", "compétences", "expérience", "cordialement", "veuillez"};
+        int frenchHits = 0;
+        for (String w : frenchWords) {
+            if (lower.contains(" " + w + " ") || lower.startsWith(w + " ") || lower.contains(" " + w + ",")) {
+                frenchHits++;
+            }
+        }
+        if (frenchHits >= 4) return "fr";
+
+        // Spanish indicators
+        String[] spanishWords = {"para", "con", "una", "los", "las", "por", "como", "estimado", "empresa",
+                "puesto", "experiencia", "habilidades", "atentamente"};
+        int spanishHits = 0;
+        for (String w : spanishWords) {
+            if (lower.contains(" " + w + " ") || lower.startsWith(w + " ")) {
+                spanishHits++;
+            }
+        }
+        if (spanishHits >= 4) return "es";
+
+        // German indicators
+        String[] germanWords = {"ich", "und", "die", "der", "den", "für", "mit", "sehr", "geehrte",
+                "bewerbung", "stelle", "unternehmen", "erfahrung", "freundlichen"};
+        int germanHits = 0;
+        for (String w : germanWords) {
+            if (lower.contains(" " + w + " ") || lower.startsWith(w + " ")) {
+                germanHits++;
+            }
+        }
+        if (germanHits >= 4) return "de";
+
+        // Default to English
+        return "en";
+    }
+
+    private static String callLectoAPI(String text, String sourceLangCode, String targetLangCode) throws Exception {
+        URL url = new URL(LECTO_API_URL);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("X-API-Key", LECTO_API_KEY);
+        conn.setRequestProperty("Accept", "application/json");
+        conn.setDoOutput(true);
+        conn.setConnectTimeout(15000);
+        conn.setReadTimeout(30000);
+
+        JSONObject body = new JSONObject();
+        JSONArray texts = new JSONArray();
+        texts.put(text);
+        body.put("texts", texts);
+        body.put("to", new JSONArray().put(targetLangCode));
+        body.put("from", sourceLangCode);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(body.toString().getBytes(StandardCharsets.UTF_8));
+        }
 
         int code = conn.getResponseCode();
-        if (code != 200) throw new Exception("MyMemory HTTP " + code);
-
-        java.io.BufferedReader br = new java.io.BufferedReader(
-                new java.io.InputStreamReader(conn.getInputStream(), java.nio.charset.StandardCharsets.UTF_8));
-        StringBuilder response = new StringBuilder();
-        String line;
-        while ((line = br.readLine()) != null) response.append(line);
-        br.close();
-
-        JSONObject json = new JSONObject(response.toString());
-        JSONObject responseData = json.optJSONObject("responseData");
-        if (responseData != null) {
-            String translated = responseData.optString("translatedText", "");
-            if (!translated.isEmpty()) return translated;
+        if (code != 200) {
+            StringBuilder err = new StringBuilder();
+            java.io.InputStream errorStream = conn.getErrorStream();
+            if (errorStream != null) {
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(errorStream, StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = br.readLine()) != null) err.append(line);
+                }
+            }
+            throw new Exception("Lecto API HTTP " + code + ": " + err);
         }
-        return text;
+
+        StringBuilder response = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) response.append(line);
+        }
+
+        System.out.println("Lecto API response: " + response.substring(0, Math.min(300, response.length())));
+
+        // Lecto response: { "translations": [ { "translated": ["..."] } ] }
+        JSONObject json = new JSONObject(response.toString());
+        JSONArray translations = json.optJSONArray("translations");
+        if (translations != null && translations.length() > 0) {
+            JSONObject first = translations.getJSONObject(0);
+            JSONArray translated = first.optJSONArray("translated");
+            if (translated != null && translated.length() > 0) {
+                return translated.getString(0);
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Fallback translation using Groq LLM when Lecto API is unavailable.
+     */
+    private static String translateWithGroq(String coverLetter, String targetLanguage) {
+        String prompt = "Translate the following cover letter to " + targetLanguage + ".\n"
+                + "Output ONLY the translated text, nothing else. No preamble, no explanation.\n\n"
+                + coverLetter;
+
+        for (String model : MODELS) {
+            try {
+                String result = callGroq(model, prompt);
+                if (result != null && !result.isBlank()) {
+                    System.out.println("Groq translation successful (" + model + ")");
+                    return cleanContent(result);
+                }
+            } catch (Exception e) {
+                System.err.println("Groq translation model " + model + " failed: " + e.getMessage());
+            }
+        }
+        return null;
     }
 }
