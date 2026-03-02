@@ -17,11 +17,18 @@ import java.util.regex.Pattern;
 
 public class OllamaRankingService {
 
-    // Use the same Groq cloud API that works for cover letter generation
+    // ── Primary: ZhipuAI (GLM) cloud API ──
+    private static final String ZHIPU_API_KEY = "399ca01135324655af81026fc4fe1601.4PIR3OuZBoUoGUWVk4QS7iQM";
+    private static final String ZHIPU_URL     = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
+    private static final String[] ZHIPU_MODELS = {
+        "glm-4-flash",
+        "glm-4"
+    };
+
+    // ── Fallback: Groq cloud API ──
     private static final String GROQ_API_KEY = "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";
     private static final String GROQ_URL     = "https://api.groq.com/openai/v1/chat/completions";
-
-    private static final String[] MODELS = {
+    private static final String[] GROQ_MODELS = {
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
         "mixtral-8x7b-32768"
@@ -43,23 +50,42 @@ public class OllamaRankingService {
         String prompt = buildPrompt(jobTitle, jobDescription, offerSkills, candidateName,
             candidateExperience, candidateEducation, candidateSkills, coverLetter, cvContent);
 
-        for (String model : MODELS) {
+        // 1) Try ZhipuAI (primary)
+        for (String model : ZHIPU_MODELS) {
             try {
-                System.out.println("[Ranking] Trying Groq model: " + model);
-                String response = callGroq(model, prompt);
+                System.out.println("[Ranking] Trying ZhipuAI model: " + model);
+                String response = callOpenAICompatible(ZHIPU_URL, ZHIPU_API_KEY, model, prompt);
                 if (response != null && !response.isEmpty()) {
                     RankResult parsed = parseResponse(response);
                     if (parsed != null) {
-                        System.out.println("[Ranking] Success with model: " + model + " | Score: " + parsed.score());
+                        System.out.println("[Ranking] Success with ZhipuAI " + model + " | Score: " + parsed.score());
                         return parsed;
                     }
                 }
             } catch (Exception e) {
-                System.err.println("[Ranking] Groq model " + model + " failed: " + e.getMessage());
+                System.err.println("[Ranking] ZhipuAI " + model + " failed: " + e.getMessage());
             }
         }
 
-        System.out.println("[Ranking] All Groq models failed — using heuristic fallback.");
+        // 2) Fallback to Groq
+        for (String model : GROQ_MODELS) {
+            try {
+                System.out.println("[Ranking] Trying Groq model: " + model);
+                String response = callOpenAICompatible(GROQ_URL, GROQ_API_KEY, model, prompt);
+                if (response != null && !response.isEmpty()) {
+                    RankResult parsed = parseResponse(response);
+                    if (parsed != null) {
+                        System.out.println("[Ranking] Success with Groq " + model + " | Score: " + parsed.score());
+                        return parsed;
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[Ranking] Groq " + model + " failed: " + e.getMessage());
+            }
+        }
+
+        // 3) Final fallback: heuristic
+        System.out.println("[Ranking] All AI providers failed — using heuristic fallback.");
         return heuristicRank(jobDescription, offerSkills, candidateSkills, coverLetter);
     }
 
@@ -106,12 +132,16 @@ public class OllamaRankingService {
         return prompt.toString();
     }
 
-    private static String callGroq(String model, String prompt) throws Exception {
-        URL url = new URL(GROQ_URL);
+    /**
+     * Generic caller for any OpenAI-compatible chat completions endpoint.
+     * Works with ZhipuAI, Groq, OpenAI, etc.
+     */
+    private static String callOpenAICompatible(String apiUrl, String apiKey, String model, String prompt) throws Exception {
+        URL url = new URL(apiUrl);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
-        conn.setRequestProperty("Authorization", "Bearer " + GROQ_API_KEY);
+        conn.setRequestProperty("Authorization", "Bearer " + apiKey);
         conn.setDoOutput(true);
         conn.setConnectTimeout(15000);
         conn.setReadTimeout(60000);
@@ -147,7 +177,7 @@ public class OllamaRankingService {
                 String line;
                 while ((line = errorReader.readLine()) != null) errorBody.append(line);
             }
-            System.err.println("[Ranking] Groq HTTP " + responseCode + " for model " + model + ": " + errorBody);
+            System.err.println("[Ranking] HTTP " + responseCode + " for " + model + ": " + errorBody);
             return null;
         }
 
