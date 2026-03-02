@@ -209,7 +209,19 @@ public class MainShellController {
 
     @FXML private void handleNotifications() {
         boolean schedulerRunning = Services.interview.InterviewReminderScheduler.isRunning();
-        int remindersSent = Services.interview.InterviewReminderScheduler.getSentCount();
+
+        // Count reminders sent from database
+        int remindersSent = 0;
+        try {
+            java.sql.Connection conn = Utils.MyDatabase.getInstance().getConnection();
+            java.sql.Statement stmt = conn.createStatement();
+            java.sql.ResultSet rs = stmt.executeQuery("SELECT COUNT(*) as cnt FROM interview WHERE reminder_sent = TRUE");
+            if (rs.next()) remindersSent = rs.getInt("cnt");
+            rs.close();
+            stmt.close();
+        } catch (Exception e) {
+            System.err.println("Error counting sent reminders: " + e.getMessage());
+        }
 
         javafx.scene.control.Dialog<Void> dialog = new javafx.scene.control.Dialog<>();
         dialog.setTitle("Notifications Système");
@@ -266,7 +278,66 @@ public class MainShellController {
         userText.getChildren().addAll(userLabel, roleLabel2);
         userRow.getChildren().addAll(userIcon, userText);
 
-        content.getChildren().addAll(title, sep, schedulerRow, dbRow, userRow);
+        // Test buttons
+        javafx.scene.control.Separator sepTest = new javafx.scene.control.Separator();
+        javafx.scene.control.Label testTitle = new javafx.scene.control.Label("Tests - Emails et SMS");
+        testTitle.setStyle("-fx-font-size:13px; -fx-font-weight:700; -fx-text-fill:#2c3e50;");
+
+        javafx.scene.layout.HBox testButtonsBox = new javafx.scene.layout.HBox(10);
+        testButtonsBox.setAlignment(javafx.geometry.Pos.CENTER);
+
+        javafx.scene.control.Button btnTestNow = new javafx.scene.control.Button("🚀 Tester Maintenant");
+        btnTestNow.setStyle("-fx-padding: 8 16; -fx-font-size: 11px; -fx-background-color: #0066CC; -fx-text-fill: white; -fx-cursor: hand;");
+        btnTestNow.setOnAction(e -> {
+            try {
+                System.out.println("\n[TEST] Démarrage du test de rappels immédiat...");
+                Services.interview.InterviewReminderScheduler.runTestNow();
+                System.out.println("[TEST] Test de rappels terminé - vérifiez la console pour les détails\n");
+                javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.INFORMATION);
+                alert.setTitle("Test Lancé");
+                alert.setHeaderText(null);
+                alert.setContentText("Test de rappels lancé!\n\nVérifiez:\n✅ Console pour les logs\n✅ Email pour les messages\n✅ Base de données pour reminder_sent");
+                alert.showAndWait();
+            } catch (Exception ex) {
+                System.err.println("[TEST ERROR] " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
+
+        javafx.scene.control.Button btnPrintDiag = new javafx.scene.control.Button("📊 Diagnostics");
+        btnPrintDiag.setStyle("-fx-padding: 8 16; -fx-font-size: 11px; -fx-background-color: #28A745; -fx-text-fill: white; -fx-cursor: hand;");
+        btnPrintDiag.setOnAction(e -> {
+            try {
+                System.out.println("\n[DIAGNOSTIC] Affichage des diagnostics...");
+                Services.interview.InterviewReminderScheduler.printDiagnostics();
+                System.out.println("[DIAGNOSTIC] Affichage terminé\n");
+            } catch (Exception ex) {
+                System.err.println("[DIAGNOSTIC ERROR] " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
+
+        javafx.scene.control.Button btnResetAll = new javafx.scene.control.Button("🔄 Réinitialiser");
+        btnResetAll.setStyle("-fx-padding: 8 16; -fx-font-size: 11px; -fx-background-color: #FFC107; -fx-text-fill: black; -fx-cursor: hand;");
+        btnResetAll.setOnAction(e -> {
+            try {
+                System.out.println("\n[RESET] Réinitialisation de tous les rappels...");
+                Services.interview.InterviewReminderScheduler.resetAllReminders();
+                System.out.println("[RESET] Réinitialisation terminée\n");
+                javafx.scene.control.Alert alert = new javafx.scene.control.Alert(javafx.scene.control.Alert.AlertType.INFORMATION);
+                alert.setTitle("Réinitialisation");
+                alert.setHeaderText(null);
+                alert.setContentText("✅ Tous les rappels ont été réinitialisés!\n\nVous pouvez maintenant relancer le test avec 'Tester Maintenant'");
+                alert.showAndWait();
+            } catch (Exception ex) {
+                System.err.println("[RESET ERROR] " + ex.getMessage());
+                ex.printStackTrace();
+            }
+        });
+
+        testButtonsBox.getChildren().addAll(btnTestNow, btnPrintDiag, btnResetAll);
+
+        content.getChildren().addAll(title, sep, schedulerRow, dbRow, userRow, sepTest, testTitle, testButtonsBox);
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().getButtonTypes().add(javafx.scene.control.ButtonType.CLOSE);
         dialog.getDialogPane().setStyle("-fx-background-color: white;");

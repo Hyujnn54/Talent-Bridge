@@ -34,11 +34,11 @@ public class InterviewReminderScheduler {
 
     private static Timer schedulerTimer;
 
-    /** In-memory set of interview IDs that already received a reminder this session */
-    private static final Set<Long> sentReminderIds = new HashSet<>();
-
     private static final long CHECK_INTERVAL_MS = 5 * 60 * 1000L; // 5 minutes
     private static boolean isRunning = false;
+
+    /** DEBUG MODE: When true, sends reminders for ANY upcoming interview (not just 20-26h window) */
+    private static final boolean DEBUG_MODE = true;
 
     private static final DateTimeFormatter LOG_FMT =
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -58,6 +58,10 @@ public class InterviewReminderScheduler {
 
         // Run once immediately so we don't wait 5 minutes on first launch
         System.out.println("[Scheduler] Starting up at " + LocalDateTime.now().format(LOG_FMT));
+        if (DEBUG_MODE) {
+            System.out.println("[Scheduler] ⚠️  DEBUG MODE ENABLED - Reminders will be sent for ANY upcoming interview");
+            System.out.println("[Scheduler]    (not just 20-26h before). Set DEBUG_MODE=false for production.");
+        }
         checkAndSendReminders();
 
         // Then repeat every 5 minutes
@@ -86,20 +90,22 @@ public class InterviewReminderScheduler {
     // -------------------------------------------------------------------------
 
     private static void checkAndSendReminders() {
-        System.out.println("\n[Scheduler] ---- Check cycle at "
-            + LocalDateTime.now().format(LOG_FMT) + " ----");
+        LocalDateTime now = LocalDateTime.now();
+        System.out.println("\n╔════════════════════════════════════════════════════════════╗");
+        System.out.println("║ [Scheduler] CHECK CYCLE at " + now.format(LOG_FMT) + "");
+        System.out.println("║ Mode: " + (DEBUG_MODE ? "DEBUG (any upcoming interview)" : "PRODUCTION (20-26h window)") + "");
+        System.out.println("╚════════════════════════════════════════════════════════════╝");
 
         List<Interview> interviews;
         try {
             interviews = InterviewService.getAll();
         } catch (Exception e) {
-            System.err.println("[Scheduler] ERROR: Could not load interviews from DB: " + e.getMessage());
+            System.err.println("[Scheduler] ❌ ERROR: Could not load interviews from DB: " + e.getMessage());
             return;
         }
 
         System.out.println("[Scheduler] Total interviews in DB: " + interviews.size());
 
-        int eligible = 0;
         int alreadySent = 0;
         int tooEarly = 0;
         int tooLate = 0;
@@ -108,9 +114,12 @@ public class InterviewReminderScheduler {
         for (Interview interview : interviews) {
             if (interview.getId() == null) continue;
 
-            // Already sent this session — skip
-            if (sentReminderIds.contains(interview.getId())) {
+            // Check if reminder was already sent (from database reminder_sent field)
+            if (hasReminderBeenSent(interview.getId())) {
                 alreadySent++;
+                System.out.println("[Scheduler]    Interview #" + interview.getId()
+                    + " at " + interview.getScheduledAt().format(LOG_FMT)
+                    + " — already sent ✓ (skip)");
                 continue;
             }
 
@@ -118,37 +127,36 @@ public class InterviewReminderScheduler {
 
             switch (status) {
                 case SEND_NOW:
-                    eligible++;
-                    System.out.println("[Scheduler] -> Interview #" + interview.getId()
+                    System.out.println("[Scheduler] ➜ Interview #" + interview.getId()
                         + " scheduled at " + interview.getScheduledAt().format(LOG_FMT)
                         + " — SENDING REMINDER...");
                     boolean ok = sendReminderForInterview(interview);
                     if (ok) {
-                        sentReminderIds.add(interview.getId());
+                        // Mark reminder as sent in database
+                        markReminderAsSent(interview.getId());
                         sent++;
                     }
                     break;
                 case TOO_EARLY:
                     tooEarly++;
                     System.out.println("[Scheduler]    Interview #" + interview.getId()
-                        + " at " + interview.getScheduledAt().format(LOG_FMT)
-                        + " — too early (>"  + WINDOW_UPPER_HOURS + "h away)");
+                        + " at " + interview.getScheduledAt().format(LOG_FMT));
                     break;
                 case TOO_LATE:
                     tooLate++;
                     System.out.println("[Scheduler]    Interview #" + interview.getId()
-                        + " at " + interview.getScheduledAt().format(LOG_FMT)
-                        + " — already passed or reminder window passed");
+                        + " at " + interview.getScheduledAt().format(LOG_FMT));
                     break;
             }
         }
 
-        System.out.println("[Scheduler] Cycle summary: "
-            + sent + " sent, "
-            + alreadySent + " already sent this session, "
-            + tooEarly + " too early, "
-            + tooLate + " too late/past.");
-        System.out.println("[Scheduler] ---- End cycle ----\n");
+        System.out.println("[Scheduler] ═════════════════════════════════════════════════");
+        System.out.println("[Scheduler] SUMMARY: "
+            + "✉️ " + sent + " sent | "
+            + "↺ " + alreadySent + " already sent | "
+            + "⏳ " + tooEarly + " too early | "
+            + "⏸ " + tooLate + " too late");
+        System.out.println("[Scheduler] ═════════════════════════════════════════════════\n");
     }
 
     // -------------------------------------------------------------------------
@@ -163,11 +171,40 @@ public class InterviewReminderScheduler {
 
     private static ReminderStatus getReminderStatus(LocalDateTime interviewTime) {
         if (interviewTime == null) return ReminderStatus.TOO_LATE;
-        long minutesUntil = ChronoUnit.MINUTES.between(LocalDateTime.now(), interviewTime);
+
+        LocalDateTime now = LocalDateTime.now();
+        long minutesUntil = ChronoUnit.MINUTES.between(now, interviewTime);
+        long hoursUntil = minutesUntil / 60;
+        long daysUntil = hoursUntil / 24;
+
+        // DEBUG MODE: Send reminders for ANY upcoming interview
+        if (DEBUG_MODE) {
+            if (minutesUntil < 0) {
+                System.out.println("[Scheduler]       Time check: " + daysUntil + "d " + (Math.abs(hoursUntil) % 24) + "h ago → TOO_LATE (past)");
+                return ReminderStatus.TOO_LATE; // Interview already passed
+            }
+            if (minutesUntil > (30 * 24 * 60)) {
+                System.out.println("[Scheduler]       Time check: " + daysUntil + "d " + (hoursUntil % 24) + "h away → TOO_EARLY (>30 days)");
+                return ReminderStatus.TOO_EARLY; // More than 30 days away
+            }
+            System.out.println("[Scheduler]       Time check: " + daysUntil + "d " + (hoursUntil % 24) + "h away → SEND_NOW ✅");
+            return ReminderStatus.SEND_NOW;
+        }
+
+        // PRODUCTION MODE: Use strict 20-26 hour window
         long lower = WINDOW_LOWER_HOURS * 60; // 1200 minutes
         long upper = WINDOW_UPPER_HOURS * 60; // 1560 minutes
-        if (minutesUntil < lower) return ReminderStatus.TOO_LATE;
-        if (minutesUntil > upper) return ReminderStatus.TOO_EARLY;
+
+        if (minutesUntil < lower) {
+            System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → TOO_LATE (<20h)");
+            return ReminderStatus.TOO_LATE;
+        }
+        if (minutesUntil > upper) {
+            System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → TOO_EARLY (>26h)");
+            return ReminderStatus.TOO_EARLY;
+        }
+
+        System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → SEND_NOW (within 20-26h) ✅");
         return ReminderStatus.SEND_NOW;
     }
 
@@ -339,6 +376,54 @@ public class InterviewReminderScheduler {
     }
 
     // -------------------------------------------------------------------------
+    // Database reminder tracking (persistent across app restarts)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Check if a reminder has already been sent for this interview.
+     * Checks the interview table's reminder_sent column.
+     */
+    private static boolean hasReminderBeenSent(Long interviewId) {
+        if (interviewId == null) return false;
+        String sql = "SELECT reminder_sent FROM interview WHERE id = ?";
+        try {
+            Connection conn = MyDatabase.getInstance().getConnection();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setLong(1, interviewId);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getBoolean("reminder_sent");
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[Scheduler] DB error checking reminder status for interview #" + interviewId + ": " + e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Mark a reminder as sent in the database.
+     * Updates the interview table's reminder_sent column to true.
+     */
+    private static void markReminderAsSent(Long interviewId) {
+        if (interviewId == null) return;
+        String sql = "UPDATE interview SET reminder_sent = true WHERE id = ?";
+        try {
+            Connection conn = MyDatabase.getInstance().getConnection();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setLong(1, interviewId);
+                int rows = ps.executeUpdate();
+                if (rows > 0) {
+                    System.out.println("[Scheduler]    Marked interview #" + interviewId + " reminder as sent in DB.");
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[Scheduler] DB error marking reminder as sent for interview #" + interviewId + ": " + e.getMessage());
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // TEST utilities
     // -------------------------------------------------------------------------
 
@@ -418,7 +503,6 @@ public class InterviewReminderScheduler {
         System.out.println("[Scheduler-DIAG] Reminder window: " + WINDOW_LOWER_HOURS
             + "h – " + WINDOW_UPPER_HOURS + "h before interview");
         System.out.println("[Scheduler-DIAG] Scheduler running: " + isRunning);
-        System.out.println("[Scheduler-DIAG] Reminders sent this session: " + sentReminderIds.size());
         System.out.println();
 
         try {
@@ -430,7 +514,7 @@ public class InterviewReminderScheduler {
                 if (i.getId() == null || i.getScheduledAt() == null) continue;
                 long minsUntil = ChronoUnit.MINUTES.between(LocalDateTime.now(), i.getScheduledAt());
                 ReminderStatus status = getReminderStatus(i.getScheduledAt());
-                boolean sent = sentReminderIds.contains(i.getId());
+                boolean sent = hasReminderBeenSent(i.getId());
 
                 System.out.printf("[Scheduler-DIAG]   #%-4d  %-20s  %+7d min  status=%-10s  reminderSent=%s%n",
                     i.getId(),
@@ -451,18 +535,36 @@ public class InterviewReminderScheduler {
     // -------------------------------------------------------------------------
 
     public static boolean isRunning() { return isRunning; }
-    public static int getSentCount()  { return sentReminderIds.size(); }
 
     /** Force-reset a reminder so it can be re-sent (useful during testing). */
     public static void resetReminder(Long interviewId) {
-        sentReminderIds.remove(interviewId);
-        System.out.println("[Scheduler] Reminder reset for interview #" + interviewId);
+        String sql = "UPDATE interview SET reminder_sent = false WHERE id = ?";
+        try {
+            Connection conn = MyDatabase.getInstance().getConnection();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                ps.setLong(1, interviewId);
+                int rows = ps.executeUpdate();
+                if (rows > 0) {
+                    System.out.println("[Scheduler] Reminder reset for interview #" + interviewId);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[Scheduler] DB error resetting reminder: " + e.getMessage());
+        }
     }
 
-    /** Reset ALL sent reminders (re-enables all for next check cycle). */
+    /** Reset ALL sent reminders so they will be re-sent. */
     public static void resetAllReminders() {
-        sentReminderIds.clear();
-        System.out.println("[Scheduler] All reminders reset.");
+        String sql = "UPDATE interview SET reminder_sent = false";
+        try {
+            Connection conn = MyDatabase.getInstance().getConnection();
+            try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                int rows = ps.executeUpdate();
+                System.out.println("[Scheduler] All reminders reset (" + rows + " interviews).");
+            }
+        } catch (SQLException e) {
+            System.err.println("[Scheduler] DB error resetting all reminders: " + e.getMessage());
+        }
     }
 }
 
