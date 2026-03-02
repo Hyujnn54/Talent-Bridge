@@ -786,7 +786,29 @@ public class InterviewManagementController {
         addDetailRow(grid, row++, "⏱ Durée",         interview.getDurationMinutes() + " minutes");
         addDetailRow(grid, row++, "🎯 Mode",          formatMode(interview.getMode()));
         if ("ONLINE".equals(interview.getMode()) && interview.getMeetingLink() != null && !interview.getMeetingLink().isBlank()) {
-            addDetailRow(grid, row++, "🔗 Lien",      interview.getMeetingLink());
+            // ── Clickable meeting link ───────────────────────────────────────
+            Label linkLbl = new Label("🔗 Lien");
+            linkLbl.setStyle("-fx-font-size:12px; -fx-font-weight:700; -fx-text-fill:#8FA3B8;");
+
+            javafx.scene.control.Hyperlink hyperlink = new javafx.scene.control.Hyperlink(interview.getMeetingLink());
+            hyperlink.setStyle("-fx-font-size:13px; -fx-text-fill:#1565C0; -fx-font-weight:600; "
+                    + "-fx-border-color:transparent; -fx-padding:0; -fx-underline:true; -fx-cursor:hand;");
+            hyperlink.setWrapText(true);
+            hyperlink.setMaxWidth(Double.MAX_VALUE);
+            final String url = interview.getMeetingLink();
+            hyperlink.setOnAction(e -> {
+                try {
+                    java.awt.Desktop.getDesktop().browse(new java.net.URI(url));
+                } catch (Exception ex) {
+                    System.err.println("[MeetingLink] Could not open browser: " + ex.getMessage());
+                }
+            });
+
+            GridPane.setConstraints(linkLbl, 0, row);
+            GridPane.setConstraints(hyperlink, 1, row);
+            GridPane.setHgrow(hyperlink, javafx.scene.layout.Priority.ALWAYS);
+            grid.getChildren().addAll(linkLbl, hyperlink);
+            row++;
         } else if ("ON_SITE".equals(interview.getMode()) && interview.getLocation() != null && !interview.getLocation().isBlank()) {
             addDetailRow(grid, row++, "📍 Lieu",      interview.getLocation());
         }
@@ -794,6 +816,32 @@ public class InterviewManagementController {
             addDetailRow(grid, row++, "📝 Notes",     interview.getNotes());
         }
         detailCard.getChildren().add(grid);
+
+        // ── Join Meeting button (ONLINE only) ──────────────────────────────
+        if ("ONLINE".equals(interview.getMode())
+                && interview.getMeetingLink() != null
+                && !interview.getMeetingLink().isBlank()) {
+            javafx.scene.control.Button joinBtn = new javafx.scene.control.Button("🔗  Rejoindre la réunion");
+            joinBtn.setMaxWidth(Double.MAX_VALUE);
+            joinBtn.setStyle("-fx-background-color:#1565C0; -fx-text-fill:white; -fx-font-size:13px;"
+                    + "-fx-font-weight:700; -fx-padding:11 0; -fx-background-radius:8; -fx-cursor:hand;");
+            joinBtn.setOnMouseEntered(e -> joinBtn.setStyle(
+                    "-fx-background-color:#0D47A1; -fx-text-fill:white; -fx-font-size:13px;"
+                    + "-fx-font-weight:700; -fx-padding:11 0; -fx-background-radius:8; -fx-cursor:hand;"));
+            joinBtn.setOnMouseExited(e -> joinBtn.setStyle(
+                    "-fx-background-color:#1565C0; -fx-text-fill:white; -fx-font-size:13px;"
+                    + "-fx-font-weight:700; -fx-padding:11 0; -fx-background-radius:8; -fx-cursor:hand;"));
+            final String meetUrl = interview.getMeetingLink();
+            joinBtn.setOnAction(e -> {
+                try {
+                    java.awt.Desktop.getDesktop().browse(new java.net.URI(meetUrl));
+                } catch (Exception ex) {
+                    System.err.println("[MeetingLink] Could not open browser: " + ex.getMessage());
+                }
+            });
+            detailCard.getChildren().add(joinBtn);
+        }
+
         rightPanelContent.getChildren().add(detailCard);
 
         // ── Recruiter: edit section (only for upcoming) + feedback section ──────
@@ -944,17 +992,19 @@ public class InterviewManagementController {
         VBox linkBox = new VBox(6);
         addSectionLabel(linkBox, "Lien de réunion");
         TextField linkVisible = new TextField(interview.getMeetingLink() != null ? interview.getMeetingLink() : "");
-        linkVisible.setPromptText("https://meet.google.com/..."); linkVisible.setMaxWidth(Double.MAX_VALUE);
+        linkVisible.setPromptText("https://meet.jit.si/..."); linkVisible.setMaxWidth(Double.MAX_VALUE);
         linkVisible.textProperty().addListener((obs, o, n) -> { if (txtMeetingLink != null) txtMeetingLink.setText(n); });
-        Button genLinkBtn = new Button("🔗  Générer un lien Google Meet");
+        Button genLinkBtn = new Button("🔗  Générer un lien Jitsi Meet");
         genLinkBtn.setMaxWidth(Double.MAX_VALUE);
         genLinkBtn.setStyle("-fx-background-color:#E8F4FD; -fx-text-fill:#1B6CB0; -fx-font-size:12px;"
                 + "-fx-font-weight:600; -fx-padding:8 0; -fx-background-radius:8; -fx-cursor:hand;"
                 + "-fx-border-color:#BBDEFB; -fx-border-width:1; -fx-border-radius:8;");
         genLinkBtn.setOnAction(e -> {
-            // Generate a Google Meet-style link
-            String meetId = java.util.UUID.randomUUID().toString().replace("-","").substring(0,10);
-            String link = "https://meet.google.com/" + meetId.substring(0,3) + "-" + meetId.substring(3,7) + "-" + meetId.substring(7,10);
+            Long iid = interview.getId() != null ? interview.getId()
+                     : (long)(Math.random() * 90000 + 10000);
+            java.time.LocalDateTime when = interview.getScheduledAt() != null
+                     ? interview.getScheduledAt() : java.time.LocalDateTime.now();
+            String link = Services.interview.MeetingService.generateMeetingLink(iid, when);
             linkVisible.setText(link);
             if (txtMeetingLink != null) txtMeetingLink.setText(link);
         });

@@ -117,10 +117,12 @@ public class UserService {
     public static UserInfo getUserInfo(Long userId) {
         try {
             Connection conn = MyDatabase.getInstance().getConnection();
+            // users table has no 'role' column — role is determined by child tables
+            // (candidate, recruiter, admin). We LEFT JOIN candidate for extra fields.
             String query = "SELECT u.first_name, u.last_name, u.email, u.phone, " +
                           "c.education_level, c.experience_years " +
-                          "FROM users u LEFT JOIN candidate c ON u.id = c.id " +
-                          "WHERE u.id = ? AND u.role = 'CANDIDATE'";
+                          "FROM users u LEFT JOIN candidate c ON u.id = c.user_id " +
+                          "WHERE u.id = ?";
             PreparedStatement stmt = conn.prepareStatement(query);
             stmt.setLong(1, userId);
             ResultSet rs = stmt.executeQuery();
@@ -138,7 +140,8 @@ public class UserService {
     public static String getRecruiterCompanyName(Long recruiterId) {
         try {
             Connection conn = MyDatabase.getInstance().getConnection();
-            PreparedStatement stmt = conn.prepareStatement("SELECT company_name FROM recruiter WHERE id = ?");
+            PreparedStatement stmt = conn.prepareStatement(
+                "SELECT company_name FROM recruiter WHERE user_id = ?");
             stmt.setLong(1, recruiterId);
             ResultSet rs = stmt.executeQuery();
             if (rs.next()) { return rs.getString("company_name"); }

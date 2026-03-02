@@ -203,7 +203,7 @@
                                 </HBox>
                                 <VBox spacing="3">
                                     <TextField fx:id="meetLinkField"
-                                               promptText="Lien reunion (https://meet.google.com/...)"
+                                               promptText="Lien reunion (https://meet.jit.si/...)"
                                                visible="false" managed="false"
                                                style="-fx-background-radius:8; -fx-border-radius:8;
                                                       -fx-border-color:#E4EBF5; -fx-border-width:1;
