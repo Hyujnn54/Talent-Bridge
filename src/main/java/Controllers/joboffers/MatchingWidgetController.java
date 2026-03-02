@@ -33,8 +33,63 @@ public class MatchingWidgetController {
 
     public MatchingWidgetController() {
         this.matchingService = new MatchingService();
-        // Créer un profil candidat par défaut (à personnaliser)
         this.candidateProfile = new CandidateProfile();
+        // Auto-load the real candidate profile from the database
+        loadCandidateProfileFromDB();
+    }
+
+    /**
+     * Loads the candidate's profile (skills, location, experience, etc.) from the database
+     * so that the matching score is computed against real data.
+     */
+    public void loadCandidateProfileFromDB() {
+        try {
+            Long candidateId = Utils.UserContext.getCandidateId();
+            if (candidateId == null) {
+                System.out.println("[MatchingWidget] Not a candidate — skipping profile load.");
+                return;
+            }
+
+            // Load basic candidate info (location, education, experience)
+            Services.user.ProfileService profileSvc = new Services.user.ProfileService();
+            Services.user.ProfileService.CandidateInfo cInfo = profileSvc.getCandidateInfo(candidateId);
+
+            // Load user info (name, email)
+            Services.user.ProfileService.UserProfile userProfile = profileSvc.getUserProfile(candidateId);
+
+            candidateProfile.setUserId(candidateId);
+            candidateProfile.setId(candidateId);
+            candidateProfile.setName(userProfile.firstName());
+            candidateProfile.setEmail(userProfile.email());
+
+            if (cInfo.location() != null && !cInfo.location().isBlank()) {
+                candidateProfile.setLocation(cInfo.location());
+            }
+            if (cInfo.experienceYears() != null) {
+                candidateProfile.setYearsOfExperience(cInfo.experienceYears());
+            }
+
+            // Load candidate skills from candidate_skill table
+            Services.user.CandidateSkillService skillService = new Services.user.CandidateSkillService();
+            List<Models.user.CandidateSkill> dbSkills = skillService.getByCandidate(candidateId);
+
+            List<CandidateSkill> profileSkills = new ArrayList<>();
+            for (Models.user.CandidateSkill dbSkill : dbSkills) {
+                // Convert Models.user.SkillLevel → Models.joboffers.SkillLevel (same enum names)
+                SkillLevel level = SkillLevel.valueOf(dbSkill.getLevel().name());
+                profileSkills.add(new CandidateSkill(dbSkill.getSkillName(), level));
+            }
+            candidateProfile.setSkills(profileSkills);
+
+            System.out.println("[MatchingWidget] Loaded candidate profile: " + userProfile.firstName()
+                    + " | Skills: " + profileSkills.size()
+                    + " | Location: " + cInfo.location()
+                    + " | Experience: " + cInfo.experienceYears() + " years");
+
+        } catch (Exception e) {
+            System.err.println("[MatchingWidget] Error loading candidate profile from DB: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     /**
