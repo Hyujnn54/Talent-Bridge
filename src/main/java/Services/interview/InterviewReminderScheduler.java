@@ -49,6 +49,10 @@ public class InterviewReminderScheduler {
 
     /** Start the background scheduler (called once from Main.start()). */
     public static synchronized void start() {
+        System.out.println("\n\n████████████████████████████████████████████████████");
+        System.out.println("║ [Scheduler] INITIALIZING INTERVIEW REMINDER SCHEDULER");
+        System.out.println("████████████████████████████████████████████████████\n");
+
         if (isRunning) {
             System.out.println("[Scheduler] Already running – skip double-start.");
             return;
@@ -62,6 +66,8 @@ public class InterviewReminderScheduler {
             System.out.println("[Scheduler] ⚠️  DEBUG MODE ENABLED - Reminders will be sent for ANY upcoming interview");
             System.out.println("[Scheduler]    (not just 20-26h before). Set DEBUG_MODE=false for production.");
         }
+
+        System.out.println("[Scheduler] Running FIRST CHECK CYCLE...\n");
         checkAndSendReminders();
 
         // Then repeat every 5 minutes
@@ -72,7 +78,7 @@ public class InterviewReminderScheduler {
             }
         }, CHECK_INTERVAL_MS, CHECK_INTERVAL_MS);
 
-        System.out.println("[Scheduler] Background scheduler active — checks every 5 minutes.");
+        System.out.println("\n[Scheduler] ✅ SCHEDULER STARTED - Background checks every 5 minutes.\n");
     }
 
     /** Stop the scheduler gracefully (called from Main on window close). */
@@ -93,18 +99,25 @@ public class InterviewReminderScheduler {
         LocalDateTime now = LocalDateTime.now();
         System.out.println("\n╔════════════════════════════════════════════════════════════╗");
         System.out.println("║ [Scheduler] CHECK CYCLE at " + now.format(LOG_FMT) + "");
-        System.out.println("║ Mode: " + (DEBUG_MODE ? "DEBUG (any upcoming interview)" : "PRODUCTION (20-26h window)") + "");
+        System.out.println("║ Mode: " + (DEBUG_MODE ? "DEBUG (any upcoming interview)" : "PRODUCTION (8-10h window)") + "");
         System.out.println("╚════════════════════════════════════════════════════════════╝");
 
         List<Interview> interviews;
         try {
+            System.out.println("[Scheduler] Fetching interviews from database...");
             interviews = InterviewService.getAll();
+            System.out.println("[Scheduler] ✅ Successfully fetched interviews");
         } catch (Exception e) {
             System.err.println("[Scheduler] ❌ ERROR: Could not load interviews from DB: " + e.getMessage());
+            e.printStackTrace();
             return;
         }
 
         System.out.println("[Scheduler] Total interviews in DB: " + interviews.size());
+        if (interviews.isEmpty()) {
+            System.out.println("[Scheduler] ⚠️  No interviews found in database");
+            return;
+        }
 
         int alreadySent = 0;
         int tooEarly = 0;
@@ -114,12 +127,12 @@ public class InterviewReminderScheduler {
         for (Interview interview : interviews) {
             if (interview.getId() == null) continue;
 
+            System.out.println("\n[Scheduler] Processing Interview #" + interview.getId() + " at " + interview.getScheduledAt().format(LOG_FMT));
+
             // Check if reminder was already sent (from database reminder_sent field)
             if (hasReminderBeenSent(interview.getId())) {
                 alreadySent++;
-                System.out.println("[Scheduler]    Interview #" + interview.getId()
-                    + " at " + interview.getScheduledAt().format(LOG_FMT)
-                    + " — already sent ✓ (skip)");
+                System.out.println("[Scheduler]    ↺ Already sent ✓ (skip)");
                 continue;
             }
 
@@ -163,9 +176,9 @@ public class InterviewReminderScheduler {
     // Time window logic
     // -------------------------------------------------------------------------
 
-    /** Reminder window: between 20 h and 26 h before the interview. */
-    private static final long WINDOW_LOWER_HOURS = 20;
-    private static final long WINDOW_UPPER_HOURS = 26;
+    /** Reminder window: between 8 and 10 hours before the interview. */
+    private static final long WINDOW_LOWER_HOURS = 8;
+    private static final long WINDOW_UPPER_HOURS = 10;
 
     private enum ReminderStatus { SEND_NOW, TOO_EARLY, TOO_LATE }
 
@@ -183,28 +196,28 @@ public class InterviewReminderScheduler {
                 System.out.println("[Scheduler]       Time check: " + daysUntil + "d " + (Math.abs(hoursUntil) % 24) + "h ago → TOO_LATE (past)");
                 return ReminderStatus.TOO_LATE; // Interview already passed
             }
-            if (minutesUntil > (30 * 24 * 60)) {
-                System.out.println("[Scheduler]       Time check: " + daysUntil + "d " + (hoursUntil % 24) + "h away → TOO_EARLY (>30 days)");
-                return ReminderStatus.TOO_EARLY; // More than 30 days away
+            if (minutesUntil > (3 * 24 * 60)) {
+                System.out.println("[Scheduler]       Time check: " + daysUntil + "d " + (hoursUntil % 24) + "h away → TOO_EARLY (>3 days)");
+                return ReminderStatus.TOO_EARLY; // More than 3 days away
             }
             System.out.println("[Scheduler]       Time check: " + daysUntil + "d " + (hoursUntil % 24) + "h away → SEND_NOW ✅");
             return ReminderStatus.SEND_NOW;
         }
 
-        // PRODUCTION MODE: Use strict 20-26 hour window
-        long lower = WINDOW_LOWER_HOURS * 60; // 1200 minutes
-        long upper = WINDOW_UPPER_HOURS * 60; // 1560 minutes
+        // PRODUCTION MODE: Use strict 8-10 hour window
+        long lower = WINDOW_LOWER_HOURS * 60; // 480 minutes
+        long upper = WINDOW_UPPER_HOURS * 60; // 600 minutes
 
         if (minutesUntil < lower) {
-            System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → TOO_LATE (<20h)");
+            System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → TOO_LATE (<8h)");
             return ReminderStatus.TOO_LATE;
         }
         if (minutesUntil > upper) {
-            System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → TOO_EARLY (>26h)");
+            System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → TOO_EARLY (>10h)");
             return ReminderStatus.TOO_EARLY;
         }
 
-        System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → SEND_NOW (within 20-26h) ✅");
+        System.out.println("[Scheduler]       Time check: " + hoursUntil + "h away → SEND_NOW (within 8-10h) ✅");
         return ReminderStatus.SEND_NOW;
     }
 
