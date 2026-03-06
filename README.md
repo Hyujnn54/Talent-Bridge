@@ -3,6 +3,12 @@
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Java Version](https://img.shields.io/badge/java-17-orange)
 ![Status](https://img.shields.io/badge/status-ongoing-yellow)
+![JavaFX](https://img.shields.io/badge/JavaFX-17-blue?logo=java)
+![Maven](https://img.shields.io/badge/build-Maven-C71A36?logo=apachemaven)
+![MySQL](https://img.shields.io/badge/database-MySQL%208-4479A1?logo=mysql&logoColor=white)
+![Symfony](https://img.shields.io/badge/web-Symfony%206-black?logo=symfony)
+![PHP](https://img.shields.io/badge/PHP-8-777BB4?logo=php&logoColor=white)
+![Platform](https://img.shields.io/badge/platform-Desktop%20%7C%20Web-lightgrey)
 
 > **Talent Bridge** is a full-stack recruitment management application built as part of a university project (PI — Projet Intégré) at ESPRIT. It covers the complete hiring lifecycle: job offers, candidate applications, technical interviews, feedback, and recruitment events — all in one unified platform.
 
