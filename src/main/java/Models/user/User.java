@@ -7,6 +7,8 @@ public class User {
     protected String firstName;
     protected String lastName;
     protected String phoneNumber;
+    protected String roles;
+    protected String discr;
 
     public User() {}
 
@@ -35,4 +37,10 @@ public class User {
 
     public String getPhoneNumber() { return phoneNumber; }
     public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
+
+    public String getRoles() { return roles; }
+    public void setRoles(String roles) { this.roles = roles; }
+
+    public String getDiscr() { return discr; }
+    public void setDiscr(String discr) { this.discr = discr; }
 }

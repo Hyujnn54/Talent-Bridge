@@ -13,7 +13,7 @@ public class AuthService {
 
     public Models.user.User login(String email, String password) throws SQLException {
         String sql = """
-                SELECT id, email, password, first_name, last_name, phone
+                SELECT id, email, password, first_name, last_name, phone, roles, discr
                 FROM users
                 WHERE email=? AND is_active=1
                 """;
@@ -26,24 +26,40 @@ public class AuthService {
                 String firstName  = rs.getString("first_name");
                 String lastName   = rs.getString("last_name");
                 String phone      = rs.getString("phone");
+                String roles      = rs.getString("roles");
+                String discr      = rs.getString("discr");
 
                 if (!PasswordUtil.verify(password, storedHash)) return null;
 
                 // 1) ADMIN?
                 Models.user.Admin a = findAdmin(id, email, storedHash, firstName, lastName, phone);
-                if (a != null) return a;
+                if (a != null) {
+                    a.setRoles(roles);
+                    a.setDiscr(discr);
+                    return a;
+                }
 
                 // 2) RECRUITER?
                 Models.user.Recruiter r = findRecruiter(id, email, storedHash, firstName, lastName, phone);
-                if (r != null) return r;
+                if (r != null) {
+                    r.setRoles(roles);
+                    r.setDiscr(discr);
+                    return r;
+                }
 
                 // 3) CANDIDATE?
                 Models.user.Candidate c = findCandidate(id, email, storedHash, firstName, lastName, phone);
-                if (c != null) return c;
+                if (c != null) {
+                    c.setRoles(roles);
+                    c.setDiscr(discr);
+                    return c;
+                }
 
                 // 4) fallback base user
                 Models.user.User u = new Models.user.User(email, storedHash, firstName, lastName, phone);
                 u.setId(id);
+                u.setRoles(roles);
+                u.setDiscr(discr);
                 return u;
             }
         }
@@ -105,8 +121,8 @@ public class AuthService {
         // after the main connection has been recycled
         Connection c = MyDatabase.getInstance().getConnection();
 
-        String sql = "SELECT id, email, password, first_name, last_name, phone " +
-                     "FROM users WHERE face_person_id=? AND is_active=1";
+        String sql = "SELECT id, email, password, first_name, last_name, phone, roles, discr " +
+                "FROM users WHERE face_person_id=? AND is_active=1";
 
         System.out.println("[AuthService] loginWithFacePersonId uuid=" + personId);
 
@@ -123,19 +139,20 @@ public class AuthService {
                 String lastName   = rs.getString("last_name");
                 String phone      = rs.getString("phone");
                 String email      = rs.getString("email");
-
-                System.out.println("[AuthService] Found user id=" + id + " email=" + email);
+                String roles      = rs.getString("roles");
+                String discr      = rs.getString("discr");
 
                 Models.user.Admin a = findAdmin(id, email, storedHash, firstName, lastName, phone);
-                if (a != null) { System.out.println("[AuthService] Role=ADMIN"); return a; }
+                if (a != null) { a.setRoles(roles); a.setDiscr(discr); return a; }
                 Models.user.Recruiter r = findRecruiter(id, email, storedHash, firstName, lastName, phone);
-                if (r != null) { System.out.println("[AuthService] Role=RECRUITER"); return r; }
+                if (r != null) { r.setRoles(roles); r.setDiscr(discr); return r; }
                 Models.user.Candidate cc = findCandidate(id, email, storedHash, firstName, lastName, phone);
-                if (cc != null) { System.out.println("[AuthService] Role=CANDIDATE"); return cc; }
+                if (cc != null) { cc.setRoles(roles); cc.setDiscr(discr); return cc; }
 
                 Models.user.User u = new Models.user.User(email, storedHash, firstName, lastName, phone);
                 u.setId(id);
-                System.out.println("[AuthService] Role=USER (fallback)");
+                u.setRoles(roles);
+                u.setDiscr(discr);
                 return u;
             }
         }

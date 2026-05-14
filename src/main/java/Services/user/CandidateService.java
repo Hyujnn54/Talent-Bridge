@@ -19,6 +19,8 @@ public class CandidateService {
         Connection conn = cnx();
         try {
             conn.setAutoCommit(false);
+            if (c.getRoles() == null) c.setRoles("[\"ROLE_CANDIDATE\"]");
+            if (c.getDiscr() == null) c.setDiscr("candidate");
             long userId = userService.addUser(c);
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setLong(1, userId);

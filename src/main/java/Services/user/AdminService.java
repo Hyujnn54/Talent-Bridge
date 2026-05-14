@@ -17,7 +17,8 @@ public class AdminService {
         Connection conn = cnx();
         try {
             conn.setAutoCommit(false);
-
+            if (a.getRoles() == null) a.setRoles("[\"ROLE_ADMIN\"]");
+            if (a.getDiscr() == null) a.setDiscr("admin");
             long userId = userService.addUser(a);
 
             try (PreparedStatement ps = conn.prepareStatement(sql)) {

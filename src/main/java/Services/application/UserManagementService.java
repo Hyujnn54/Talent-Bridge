@@ -2,6 +2,7 @@ package Services.application;
 
 import Utils.MyDatabase;
 import Utils.UserContext;
+import Utils.PasswordUtil;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -35,15 +36,15 @@ public class UserManagementService {
         "SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.is_active, " +
         "  CASE " +
         "    WHEN a.id  IS NOT NULL THEN 'ADMIN' " +
-        "    WHEN r.user_id IS NOT NULL THEN 'RECRUITER' " +
-        "    WHEN c.user_id IS NOT NULL THEN 'CANDIDATE' " +
+        "    WHEN r.id  IS NOT NULL OR r.user_id IS NOT NULL THEN 'RECRUITER' " +
+        "    WHEN c.id  IS NOT NULL OR c.user_id IS NOT NULL THEN 'CANDIDATE' " +
         "    ELSE 'UNKNOWN' " +
         "  END AS role, " +
         "  COALESCE(r.company_name, c.location, '') AS additional_info " +
         "FROM users u " +
         "LEFT JOIN admin     a ON u.id = a.id " +
-        "LEFT JOIN recruiter r ON u.id = r.user_id " +
-        "LEFT JOIN candidate c ON u.id = c.user_id ";
+        "LEFT JOIN recruiter r ON (u.id = r.id OR u.id = r.user_id) " +
+        "LEFT JOIN candidate c ON (u.id = c.id OR u.id = c.user_id) ";
 
     private static UserRow mapRow(ResultSet rs) throws SQLException {
         return new UserRow(
@@ -145,25 +146,32 @@ public class UserManagementService {
      */
     public static Long createUser(String firstName, String lastName, String email, String phone,
                                    String password, String role, Boolean isActive) {
-        // users table has no role column — just insert the base user
-        String sql = "INSERT INTO users (first_name, last_name, email, phone, password, is_active) " +
-                     "VALUES (?, ?, ?, ?, ?, ?)";
+        String sql = "INSERT INTO users (first_name, last_name, email, phone, password, is_active, roles, discr) " +
+                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+        String safePassword = password != null ? password : "default123";
+        String hashed = PasswordUtil.hash(safePassword);
+        String roleValue = role != null ? role : "USER";
+        String rolesJson = "[\"ROLE_" + roleValue + "\"]";
+        String discr = roleValue.toLowerCase();
 
         try (PreparedStatement pstmt = getConnection().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, firstName);
             pstmt.setString(2, lastName);
             pstmt.setString(3, email);
             pstmt.setString(4, phone);
-            pstmt.setString(5, password != null ? password : "default123");
+            pstmt.setString(5, hashed);
             pstmt.setBoolean(6, isActive != null ? isActive : true);
+            pstmt.setString(7, rolesJson);
+            pstmt.setString(8, discr);
 
             int affectedRows = pstmt.executeUpdate();
             if (affectedRows > 0) {
                 try (ResultSet generatedKeys = pstmt.getGeneratedKeys()) {
                     if (generatedKeys.next()) {
                         Long userId = generatedKeys.getLong(1);
-                        if ("RECRUITER".equals(role)) createRecruiterProfile(userId);
-                        else if ("CANDIDATE".equals(role)) createCandidateProfile(userId);
+                        if ("RECRUITER".equals(roleValue)) createRecruiterProfile(userId);
+                        else if ("CANDIDATE".equals(roleValue)) createCandidateProfile(userId);
                         return userId;
                     }
                 }
@@ -229,12 +237,20 @@ public class UserManagementService {
      * Create recruiter profile for a new recruiter user
      */
     private static void createRecruiterProfile(Long userId) {
-        String sql = "INSERT IGNORE INTO recruiter (user_id, company_name, company_location) VALUES (?, '', '')";
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
-            pstmt.setLong(1, userId);
-            pstmt.executeUpdate();
+        try {
+            String sql = "INSERT IGNORE INTO recruiter (id, company_name, company_location) VALUES (?, '', '')";
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+                pstmt.setLong(1, userId);
+                pstmt.executeUpdate();
+            }
         } catch (SQLException e) {
-            System.err.println("Error creating recruiter profile: " + e.getMessage());
+            String sql = "INSERT IGNORE INTO recruiter (user_id, company_name, company_location) VALUES (?, '', '')";
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+                pstmt.setLong(1, userId);
+                pstmt.executeUpdate();
+            } catch (SQLException ex) {
+                System.err.println("Error creating recruiter profile: " + ex.getMessage());
+            }
         }
     }
 
@@ -242,13 +258,22 @@ public class UserManagementService {
      * Create candidate profile for a new candidate user
      */
     private static void createCandidateProfile(Long userId) {
-        String sql = "INSERT IGNORE INTO candidate (user_id, location, education_level, experience_years, cv_path) " +
-                     "VALUES (?, '', '', 0, '')";
-        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
-            pstmt.setLong(1, userId);
-            pstmt.executeUpdate();
+        try {
+            String sql = "INSERT IGNORE INTO candidate (id, location, education_level, experience_years, cv_path) " +
+                         "VALUES (?, '', '', 0, '')";
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+                pstmt.setLong(1, userId);
+                pstmt.executeUpdate();
+            }
         } catch (SQLException e) {
-            System.err.println("Error creating candidate profile: " + e.getMessage());
+            String sql = "INSERT IGNORE INTO candidate (user_id, location, education_level, experience_years, cv_path) " +
+                         "VALUES (?, '', '', 0, '')";
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+                pstmt.setLong(1, userId);
+                pstmt.executeUpdate();
+            } catch (SQLException ex) {
+                System.err.println("Error creating candidate profile: " + ex.getMessage());
+            }
         }
     }
 }

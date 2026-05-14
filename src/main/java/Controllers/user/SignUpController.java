@@ -181,6 +181,9 @@ public class SignUpController {
 
         // Insert user (NO role column in DB)
         try {
+            String rolesJson = "[\"ROLE_" + type + "\"]";
+            String discr = type.toLowerCase();
+
             if ("RECRUITER".equals(type)) {
                 String companyName = txtCompanyName.getText() == null ? "" : txtCompanyName.getText().trim();
                 if (companyName.isEmpty()) {
@@ -193,6 +196,8 @@ public class SignUpController {
                         companyName,
                         txtCompanyLocation.getText() == null ? "" : txtCompanyLocation.getText().trim()
                 );
+                r.setRoles(rolesJson);
+                r.setDiscr(discr);
 
                 recruiterService.addRecruiter(r);
 
@@ -214,6 +219,8 @@ public class SignUpController {
                         years,
                         txtCvPath.getText() == null ? "" : txtCvPath.getText().trim()
                 );
+                c.setRoles(rolesJson);
+                c.setDiscr(discr);
 
                 candidateService.addCandidate(c);
             }

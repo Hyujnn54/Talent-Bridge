@@ -16,6 +16,8 @@ public class RecruiterService {
         Connection c = cnx();
         try {
             c.setAutoCommit(false);
+            if (r.getRoles() == null) r.setRoles("[\"ROLE_RECRUITER\"]");
+            if (r.getDiscr() == null) r.setDiscr("recruiter");
             long userId = userService.addUser(r);
             try (PreparedStatement ps = c.prepareStatement(sql)) {
                 ps.setLong(1, userId);

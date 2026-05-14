@@ -1,0 +1,70 @@
+ARCHITECTURE LOGIQUE GLOBALE MVC
+
+1) VUE GLOBALE
+Le projet suit une architecture MVC (Model - View - Controller) avec JavaFX.
+- View: ecrans FXML et composants UI.
+- Controller: gestion des actions utilisateur, navigation, validation et orchestration.
+- Model: entites metier et structures de donnees.
+- Service: logique metier, acces base de donnees, appels API externes, IA, email.
+- Utils: session, contexte utilisateur, securite, navigation, helpers techniques.
+
+2) FLUX GLOBAL
+- L utilisateur interagit avec un ecran FXML.
+- Le Controller recupere les donnees de formulaire et declenche la logique.
+- Le Controller appelle un ou plusieurs Services.
+- Les Services lisent/ecrivent les Models via la base de donnees ou APIs.
+- Le Controller met a jour la View (tables, cartes, statistiques, alerts).
+
+3) COUCHE VIEW (PRINCIPALES VUES)
+- MainShell.fxml
+- Login.fxml, SignUp.fxml, Profile.fxml
+- CandidateDashboard.fxml, RecruiterDashboard.fxml, AdminDashboard.fxml
+- Applications.fxml, AdminApplications.fxml, AdminApplicationStatistics.fxml
+- JobOffers.fxml, JobOffersBrowse.fxml, JobOffersAdmin.fxml, JobOffersFilter.fxml, AnalyticsDashboard.fxml
+- Events.fxml, CandidateEvents.fxml, RecruiterEvents.fxml, AdminEvents.fxml, PastEvents.fxml
+- InterviewManagement.fxml
+
+4) GESTION APPLICATIONS
+- Controllers: ApplicationsController.java, AdminApplicationsController.java, AdminDashboardController.java
+- Models: JobApplication.java, CandidateProfile.java, ApplicationStatusHistory.java
+- Services: ApplicationService.java, ApplicationStatusHistoryService.java, ApplicationStatisticsService.java, OllamaRankingService.java, GrokAIService.java, LocalCoverLetterService.java, EmailServiceApplication.java, FileService.java
+- Logique: candidature, statut, historique, scoring/ranking IA, generation cover letter, email de confirmation.
+
+5) GESTION OFFRES
+- Controllers: JobOffersController.java, JobOffersBrowseController.java, JobOffersAdminController.java, JobOffersFilterController.java, AnalyticsDashboardController.java, MatchingWidgetController.java, MapViewController.java
+- Models: JobOffer.java, OfferSkill.java, MatchingResult.java, JobOfferRecommendation.java, JobOfferWarning.java, ModerationResult.java
+- Services: JobOfferService.java, MatchingService.java, OfferSkillService.java, RecommendationService.java, ModerationService.java, NotificationService.java, NominatimMapService.java, AnalyticsService.java
+- Logique: CRUD offres, matching profil/offre, moderation, recommandations, carte, analytics.
+
+6) GESTION UTILISATEURS
+- Controllers: LoginController.java, SignUpController.java, ProfileController.java, CandidateDashboardController.java, RecruiterDashboardController.java, AdminDashboardController.java, CandidateSkillsController.java, ForgotPasswordController.java, ResetPasswordController.java
+- Models: User.java, Candidate.java, Recruiter.java, Admin.java, CandidateSkill.java, SkillLevel.java
+- Services: UserService.java, AuthService.java, AdminService.java, CandidateService.java, RecruiterService.java, ProfileService.java, CandidateSkillService.java, PasswordResetService.java, EmailService.java, SMSService.java
+- Logique: authentification, roles, profil, competences candidat, recuperation mot de passe.
+
+7) GESTION EVENEMENTS
+- Controllers: EventsViewController.java, CandidateDashboardController.java, RecruiterDashboardController.java, AdminDashboardController.java, PastEventsController.java, RegistrationModalController.java
+- Models: RecruitmentEvent.java, EventRegistration.java, EventReview.java, EventUser.java, EventCandidate.java, EventRecruiter.java
+- Services: RecruitmentEventService.java, EventRegistrationService.java, ReviewService.java
+- Logique: creation/edition d evenements, inscription, participation, avis, notifications.
+
+8) GESTION INTERVIEWS
+- Controllers: InterviewManagementController.java, CalendarViewController.java
+- Models: Interview.java, InterviewFeedback.java
+- Services: InterviewService.java, InterviewFeedbackService.java, InterviewReminderScheduler.java, InterviewEmailService.java, MeetingService.java
+- Logique: planification interview, calendrier, feedback, rappels et emails.
+
+9) COMPOSANTS TRANSVERSES
+- MainShellController.java pour la structure globale de navigation.
+- UserContext.java, SessionManager.java, Session.java pour contexte et session.
+- MyDatabase.java pour connexion base de donnees.
+- SceneManager.java pour navigation scenes JavaFX.
+- ValidationUtils.java, InputValidator.java, PasswordUtil.java pour securite/validation.
+
+10) RESUME
+L architecture est modulaire par gestion metier. Le MVC est respecte:
+- Views pour presentation,
+- Controllers pour orchestration UI,
+- Services pour logique metier/integrations,
+- Models pour donnees metier,
+avec une couche Utils transversale pour session, securite et infrastructure.

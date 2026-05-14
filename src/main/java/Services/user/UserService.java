@@ -15,11 +15,13 @@ public class UserService {
     // ===== CREATE =====
     public long addUser(User u) throws SQLException {
         String sql = """
-            INSERT INTO users (email, password, first_name, last_name, phone, is_active)
-            VALUES (?,?,?,?,?,1)
+            INSERT INTO users (email, password, first_name, last_name, phone, is_active, roles, discr)
+            VALUES (?,?,?,?,?,1,?,?)
         """;
 
-        String hashed = PasswordUtil.hash(u.getPassword()); // ✅ hash here
+        String hashed = PasswordUtil.hash(u.getPassword());
+        String roles = u.getRoles() != null ? u.getRoles() : "[\"ROLE_USER\"]";
+        String discr = u.getDiscr() != null ? u.getDiscr() : "user";
 
         try (PreparedStatement ps = cnx().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, u.getEmail());
@@ -27,6 +29,8 @@ public class UserService {
             ps.setString(3, u.getFirstName());
             ps.setString(4, u.getLastName());
             ps.setString(5, u.getPhoneNumber());
+            ps.setString(6, roles);
+            ps.setString(7, discr);
 
             ps.executeUpdate();
 
@@ -39,7 +43,7 @@ public class UserService {
 
     // ===== READ =====
     public User getById(long id) throws SQLException {
-        String sql = "SELECT id, email, password, first_name, last_name, phone FROM users WHERE id=?";
+        String sql = "SELECT id, email, password, first_name, last_name, phone, roles, discr FROM users WHERE id=?";
         try (PreparedStatement ps = cnx().prepareStatement(sql)) {
             ps.setLong(1, id);
             try (ResultSet rs = ps.executeQuery()) {
@@ -47,19 +51,21 @@ public class UserService {
 
                 User u = new User(
                         rs.getString("email"),
-                        rs.getString("password"), // hash
+                        rs.getString("password"),
                         rs.getString("first_name"),
                         rs.getString("last_name"),
                         rs.getString("phone")
                 );
                 u.setId(rs.getLong("id"));
+                u.setRoles(rs.getString("roles"));
+                u.setDiscr(rs.getString("discr"));
                 return u;
             }
         }
     }
 
     public List<User> getAll() throws SQLException {
-        String sql = "SELECT id, email, password, first_name, last_name, phone FROM users ORDER BY id DESC";
+        String sql = "SELECT id, email, password, first_name, last_name, phone, roles, discr FROM users ORDER BY id DESC";
         List<User> list = new ArrayList<>();
         try (PreparedStatement ps = cnx().prepareStatement(sql);
              ResultSet rs = ps.executeQuery()) {
@@ -67,12 +73,14 @@ public class UserService {
             while (rs.next()) {
                 User u = new User(
                         rs.getString("email"),
-                        rs.getString("password"), // hash
+                        rs.getString("password"),
                         rs.getString("first_name"),
                         rs.getString("last_name"),
                         rs.getString("phone")
                 );
                 u.setId(rs.getLong("id"));
+                u.setRoles(rs.getString("roles"));
+                u.setDiscr(rs.getString("discr"));
                 list.add(u);
             }
         }
@@ -175,7 +183,7 @@ public class UserService {
     }
 
     public User getByFacePersonId(String facePersonId) throws SQLException {
-        String sql = "SELECT id, email, password, first_name, last_name, phone " +
+        String sql = "SELECT id, email, password, first_name, last_name, phone, roles, discr " +
                 "FROM users WHERE face_person_id=? AND is_active=1";
 
         try (PreparedStatement ps = cnx().prepareStatement(sql)) {
@@ -186,13 +194,15 @@ public class UserService {
 
                 User u = new User(
                         rs.getString("email"),
-                        rs.getString("password"),     // hashed password in DB
+                        rs.getString("password"),
                         rs.getString("first_name"),
                         rs.getString("last_name"),
                         rs.getString("phone")
                 );
 
                 u.setId(rs.getLong("id"));
+                u.setRoles(rs.getString("roles"));
+                u.setDiscr(rs.getString("discr"));
                 return u;
             }
         }
