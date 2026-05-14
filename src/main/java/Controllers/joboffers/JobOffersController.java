@@ -569,10 +569,8 @@ public class JobOffersController {
     private void displayJobDetails(JobOffer job) {
         detailContainer.getChildren().clear();
 
-        // Show warning section first if flagged
-        if (job.isFlagged() || job.getStatus() == Status.FLAGGED) {
-            displayWarningsForRecruiter(job);
-        }
+        // Show warning section first if any warning exists
+        displayWarningsForRecruiter(job);
 
         // ---- Header card ----
         VBox headerCard = new VBox(12);

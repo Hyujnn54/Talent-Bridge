@@ -24,7 +24,7 @@ public class ApplicationStatusHistoryService {
 
     // CREATE
     public static Long addStatusHistory(Long applicationId, String status, Long changedBy, String note) {
-        String sql = "INSERT INTO application_status_history (application_id, status, changed_by, note) " +
+        String sql = "INSERT INTO application_status_history (application_id, status, changed_by_id, note) " +
                      "VALUES (?, ?, ?, ?)";
 
         try (PreparedStatement ps = getConnection().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -49,7 +49,7 @@ public class ApplicationStatusHistoryService {
     // READ - By Application ID
     public static List<StatusHistoryRow> getByApplicationId(Long applicationId) {
         List<StatusHistoryRow> list = new ArrayList<>();
-        String sql = "SELECT id, application_id, status, changed_at, changed_by, note " +
+        String sql = "SELECT id, application_id, status, changed_at, changed_by_id AS changed_by, note " +
                      "FROM application_status_history " +
                      "WHERE application_id = ? " +
                      "ORDER BY changed_at DESC";
@@ -77,7 +77,7 @@ public class ApplicationStatusHistoryService {
 
     // READ - By ID
     public static StatusHistoryRow getById(Long id) {
-        String sql = "SELECT id, application_id, status, changed_at, changed_by, note " +
+        String sql = "SELECT id, application_id, status, changed_at, changed_by_id AS changed_by, note " +
                      "FROM application_status_history WHERE id = ?";
 
         try (PreparedStatement ps = getConnection().prepareStatement(sql)) {

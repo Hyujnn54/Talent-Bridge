@@ -264,12 +264,41 @@ public class ApplicationService {
                 System.err.println("Error deleting PDF file: " + e.getMessage());
             }
         }
-        String sql = "DELETE FROM job_application WHERE id = ?";
-        try (PreparedStatement ps = getConnection().prepareStatement(sql)) {
-            ps.setLong(1, applicationId);
-            ps.executeUpdate();
+        Connection connection = getConnection();
+        try {
+            connection.setAutoCommit(false);
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM interview_feedback WHERE interview_id IN (" +
+                            "SELECT id FROM interview WHERE application_id = ?)")) {
+                ps.setLong(1, applicationId);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM interview WHERE application_id = ?")) {
+                ps.setLong(1, applicationId);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM application_status_history WHERE application_id = ?")) {
+                ps.setLong(1, applicationId);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM job_application WHERE id = ?")) {
+                ps.setLong(1, applicationId);
+                ps.executeUpdate();
+            }
+
+            connection.commit();
         } catch (SQLException e) {
+            try { connection.rollback(); } catch (SQLException ignored) {}
             throw new RuntimeException("Failed to delete application: " + e.getMessage(), e);
+        } finally {
+            try { connection.setAutoCommit(true); } catch (SQLException ignored) {}
         }
     }
 

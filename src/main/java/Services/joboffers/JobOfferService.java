@@ -254,10 +254,68 @@ public class JobOfferService {
 
     // DELETE (instance)
     public boolean deleteJobOffer(Long id) throws SQLException {
-        String query = "DELETE FROM job_offer WHERE id = ?";
-        try (PreparedStatement ps = conn().prepareStatement(query)) {
-            ps.setLong(1, id);
-            return ps.executeUpdate() > 0;
+        Connection connection = conn();
+        try {
+            connection.setAutoCommit(false);
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM interview_feedback WHERE interview_id IN (" +
+                            "SELECT id FROM interview WHERE application_id IN (" +
+                            "SELECT id FROM job_application WHERE offer_id = ?) )")) {
+                ps.setLong(1, id);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM interview WHERE application_id IN (" +
+                            "SELECT id FROM job_application WHERE offer_id = ?)")) {
+                ps.setLong(1, id);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM application_status_history WHERE application_id IN (" +
+                            "SELECT id FROM job_application WHERE offer_id = ?)")) {
+                ps.setLong(1, id);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM job_application WHERE offer_id = ?")) {
+                ps.setLong(1, id);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM warning_correction WHERE job_offer_id = ?")) {
+                ps.setLong(1, id);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM job_offer_warning WHERE job_offer_id = ?")) {
+                ps.setLong(1, id);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM offer_skill WHERE offer_id = ?")) {
+                ps.setLong(1, id);
+                ps.executeUpdate();
+            }
+
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "DELETE FROM job_offer WHERE id = ?")) {
+                ps.setLong(1, id);
+                int rows = ps.executeUpdate();
+                connection.commit();
+                return rows > 0;
+            }
+        } catch (SQLException e) {
+            connection.rollback();
+            throw e;
+        } finally {
+            connection.setAutoCommit(true);
         }
     }
 
@@ -466,4 +524,3 @@ public class JobOfferService {
         return jobOffer;
     }
 }
-
